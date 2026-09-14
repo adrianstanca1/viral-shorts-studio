@@ -1,4 +1,4 @@
-const clean=s=>String(s||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+const clean=s=>String(s||'').replace(/<[^>]+>/g,' ').replace(/(^|\s)#{1,6}\s+/g,' ').replace(/\[\.\.\.\]/g,' ').replace(/\s+/g,' ').trim();
 const terms=s=>new Set(clean(s).toLowerCase().split(/[^a-z0-9]+/).filter(x=>x.length>2));
 const overlap=(a,b)=>{const A=terms(a),B=terms(b);let n=0;for(const t of A)if(B.has(t))n++;return n;};
 export function sourceQuality(topic,source={}){
@@ -84,7 +84,13 @@ export function fitNarrationBudget(scenes=[],targetDuration=60){
     const left=scenes.length-i, words=clean(scene.narration).split(/\s+/).filter(Boolean);
     const preferred=Math.min(Number(targetDuration)<=30?12:14,base+(['hook','payoff'].includes(scene.beat)?1:0));
     const reserve=Math.max(0,(left-1)*7),limit=Math.max(7,Math.min(preferred,remaining-reserve));
-    const trimmed=words.length>limit?words.slice(0,limit):words;
+    let trimmed=words;
+    if(words.length>limit){
+      const firstClause=clean(scene.narration).split(/[,;:—–](?:\s+|$)/)[0].split(/\s+/).filter(Boolean);
+      trimmed=firstClause.length>=7&&firstClause.length<=limit?firstClause:words.slice(0,limit);
+      const dangling=/^(?:a|an|the|and|or|but|of|to|in|on|for|with|from|at|by|as|into|including|through|after|before)$/i;
+      while(trimmed.length>7&&dangling.test(String(trimmed.at(-1)||'').replace(/[^a-z]/gi,'')))trimmed.pop();
+    }
     remaining-=trimmed.length;
     let narration=trimmed.join(' ').replace(/[,:;]+$/,'');
     if(narration&&!/[.!?]$/.test(narration))narration+='.';

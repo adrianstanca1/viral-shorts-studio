@@ -88,6 +88,14 @@ export function visualAssetScore(asset,scene){
   return Math.round(clamp(score,-20,50));
 }
 function relevanceScore(asset,scene){return visualAssetScore(asset,scene);}
+export function mediaSearchQueries(scene={},fallbackQuery=''){
+  const compact=v=>cleanText(v).replace(/[^a-z0-9'’ -]/gi,' ').replace(/\s+/g,' ').trim();
+  const source=compact(scene.sourceTitle||'').split(/\s+/).slice(0,8).join(' ');
+  const topic=compact(fallbackQuery||'').split(/\s+/).slice(0,8).join(' ');
+  const narration=compact(scene.narration||'').split(/\s+/).filter(w=>w.length>3).slice(0,6).join(' ');
+  const primary=compact(scene.searchQuery||'').split(/\s+/).slice(0,12).join(' ');
+  return [...new Set([primary,[source,narration].filter(Boolean).join(' '),source,topic,[topic,narration].filter(Boolean).join(' ')].filter(Boolean))].slice(0,5);
+}
 function enrichVisualDirection(storyboard,sources,topic,style){
   return storyboard.map(scene=>{
     const source=sources[Number(scene.sourceIndex)]||null,sourceTitle=cleanText(source?.title||'');
@@ -349,9 +357,11 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   const variant=Math.max(0,Number(scene.variantSeed||0));
   if(scene.style==='whiteboard') return makeWhiteboardScene(scene,sceneDir,fallbackQuery,sharedNarration);
   const poolStart=Math.max(0,((scene.index-1)*2 + variant*3) % Math.max(1,mediaPool.length));
-  const candidates=[...mediaPool.slice(poolStart,poolStart+4),...await commonsImages(`${scene.searchQuery} ${variant?`variation ${variant}`:''}`.trim(),8).catch(()=>[])];
-  if(candidates.length<6) candidates.push(...await commonsImages(scene.searchQuery.split(' ').slice(0,4).join(' '),8).catch(()=>[]));
-  if(fallbackQuery) candidates.push(...await commonsImages(fallbackQuery,12).catch(()=>[]));
+  const candidates=[...mediaPool.slice(poolStart,poolStart+4)];
+  for(const query of mediaSearchQueries(scene,fallbackQuery)){
+    if(candidates.length>=12)break;
+    candidates.push(...await commonsImages(`${query}${variant?` variation ${variant}`:''}`,8).catch(()=>[]));
+  }
   const avoid=new Set((scene.avoidAssetKeys||[]).map(x=>String(x)));
   let unique=[...new Map(candidates.filter(x=>x?.url).map(x=>[x.url,x])).values()].sort((a,b)=>relevanceScore(b,scene)-relevanceScore(a,scene));
   let novel=unique.filter(x=>!avoid.has(assetKey(x))),avoided=unique.filter(x=>avoid.has(assetKey(x)));

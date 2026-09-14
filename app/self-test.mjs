@@ -65,7 +65,7 @@ assert.equal(recoveredComplete.changed,true);assert.equal(recoveredComplete.job.
 const interrupted=recoverProjectState({status:'assembling',progress:90,storyboard:[{index:1},{index:2}],scenes:[{index:1,file:'/ok/scene1.mp4'},{index:2,file:'/missing/scene2.mp4'}],render:{file:'/missing/final.mp4'}},{exists:x=>recoveryExists.has(x)});
 assert.equal(interrupted.job.status,'queued');assert.equal(interrupted.job.scenes.length,1);assert.equal(interrupted.job.render,undefined);
 
-const {writePhraseCaptions,visualAssetScore,candidateScore,repairTargetIndexes,editingRhythmAnalysis}=await import('./pipeline.mjs');
+const {writePhraseCaptions,visualAssetScore,candidateScore,repairTargetIndexes,editingRhythmAnalysis,mediaSearchQueries}=await import('./pipeline.mjs');
 const visualScene={beat:'hook',searchQuery:'Great Smog London 1952 streets',overlay:'Great Smog London',narration:'London was covered by deadly smog in 1952.',sourceTitle:'Great Smog of London'};
 assert.ok(visualAssetScore({title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'},visualScene)>visualAssetScore({title:'Generic flag icon',artist:'',license:'CC0',type:'image',source:'https://example.com'},visualScene));
 assert.ok(candidateScore({assets:[{title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'}],hasRealVideo:false,visualType:'archive-motion'},visualScene)>=50);
@@ -75,6 +75,8 @@ fs.rmSync(root,{recursive:true,force:true});
 
 
 const budgeted=fitNarrationBudget([{index:1,beat:'hook',narration:'But this deliberately long narration contains far too many words for a very short opening scene and needs trimming.'},{index:2,beat:'payoff',narration:'So the final consequence became clear after policy changed across London and beyond.'}],8);assert.ok(budgeted.every(x=>x.pacingBudget.finalWords<=x.pacingBudget.maxWords));assert.ok(budgeted.some(x=>x.pacingBudget.trimmed));
+const naturalBudget=fitNarrationBudget([{index:1,beat:'context',narration:'It led to several changes in practices and regulations, including the Clean Air Act and later reforms.'},{index:2,beat:'context',narration:'Government medical reports estimated up to 4,000 people died directly from the Great Smog in London.'}],8);assert.ok(naturalBudget.every(x=>!/(?:\bthe|\ba|\ban|\band|\bor|\bof|\bto|\bin|\bon|\bfor|\bwith|\bfrom|\bby|\bincluding)\.$/i.test(x.narration)));
+const searchQueries=mediaSearchQueries({sourceTitle:'Great Smog of London',searchQuery:'Great Smog of London 1952 clean air act Great Smog of London dramatic close-up overly verbose narration',narration:'Government reports estimated thousands died during the smog.'},'Great Smog London');assert.ok(searchQueries.length>=3);assert.ok(searchQueries.some(q=>q==='Great Smog of London'));assert.ok(searchQueries.every(q=>q.split(/\s+/).length<=14));
 
 const repaired=repairNarration([
   {index:1,beat:'hook',narration:'London had a smog event.',sourceIndex:0},
