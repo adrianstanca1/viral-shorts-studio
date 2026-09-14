@@ -13,10 +13,21 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openrouter-catalog.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
+import { authConfigured, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
 import { recoverProjectState } from './recovery.mjs';
 
 const app = express();
+app.disable('x-powered-by');
+app.use(securityHeaders);
 app.use(express.json({limit:'2mb'}));
+app.use(express.urlencoded({extended:false,limit:'16kb'}));
+const AUTH_SECRET=process.env.APP_AUTH_SECRET||'';
+const WORKER_TOKEN=process.env.PROVIDER_WORKER_TOKEN||'';
+app.get('/login',(req,res)=>{if(!authConfigured(AUTH_SECRET))return res.redirect('/');res.type('html').send(loginPage(req.query.error==='1'));});
+app.post('/api/session',createRateLimiter({windowMs:15*60_000,max:10}),(req,res)=>{if(!authConfigured(AUTH_SECRET))return res.status(409).json({error:'Owner authentication is not configured'});if(!safeEqual(req.body?.password,AUTH_SECRET))return res.redirect('/login?error=1');setOwnerCookie(req,res,AUTH_SECRET);res.redirect('/');});
+app.post('/api/logout',(req,res)=>{clearOwnerCookie(res);res.redirect('/login');});
+app.use((req,res,next)=>{if(req.path==='/api/health'||req.path==='/login'||req.path==='/api/session')return next();if(WORKER_TOKEN&&safeEqual(req.get('x-provider-worker-token'),WORKER_TOKEN))return next();if(isOwner(req,AUTH_SECRET))return next();if(req.path.startsWith('/api/'))return res.status(401).json({error:'authentication required'});return res.redirect('/login');});
+app.use(createRateLimiter({windowMs:5*60_000,max:Number(process.env.WRITE_RATE_LIMIT||120)}));
 app.use(express.static(new URL('./public', import.meta.url).pathname));
 const PORT = Number(process.env.PORT || 3010);
 const DATA = process.env.DATA_DIR || '/app/data';
@@ -64,7 +75,9 @@ app.get('/api/diagnostics',async(req,res)=>{
       {id:'local-ai',label:'Local AI',ok:local?.status==='available'&&local?.enabled!==false,detail:local?.status||'unavailable'},
       {id:'queue',label:'Generation queue',ok:pending<25,detail:`${pending} pending/leased`},
       {id:'worker',label:'Provider worker',ok:workerAgeSeconds===null||workerAgeSeconds<180,detail:workerAgeSeconds===null?'no heartbeat yet':`${workerAgeSeconds}s since heartbeat`},
-      {id:'cost-policy',label:'Cost policy',ok:true,detail:'free-only; paid fallback disabled'}
+      {id:'cost-policy',label:'Cost policy',ok:true,detail:'free-only; paid fallback disabled'},
+      {id:'owner-auth',label:'Owner authentication',ok:authConfigured(AUTH_SECRET),detail:authConfigured(AUTH_SECRET)?'configured':'disabled until public launch'},
+      {id:'rate-limit',label:'Write rate limit',ok:true,detail:`${Number(process.env.WRITE_RATE_LIMIT||120)} requests / 5 min`}
     ];
     const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
     res.json({status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending},activeProject:active,shuttingDown,generatedAt:new Date().toISOString()});

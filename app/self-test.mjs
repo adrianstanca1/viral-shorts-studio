@@ -13,7 +13,10 @@ import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
 import { recoverProjectState } from './recovery.mjs';
 import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
+import { authConfigured, ownerSessionToken, safeEqual } from './security.mjs';
 
+
+assert.equal(authConfigured('short'),false);assert.equal(authConfigured('123456789012345678901234'),true);assert.ok(ownerSessionToken('123456789012345678901234').length>20);assert.equal(safeEqual('same','same'),true);assert.equal(safeEqual('same','different'),false);
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
 const sampleSources=[{title:'Great Smog of London',url:'https://example.com/1',extract:'The Great Smog of London occurred in December 1952 and caused thousands of deaths.',provider:'wikipedia'},{title:'Unrelated',url:'https://example.com/2',extract:'A short generic sentence about another topic.',provider:'web'}];
 assert.ok(sourceQuality('Great Smog London',sampleSources[0])>sourceQuality('Great Smog London',sampleSources[1]));
@@ -69,7 +72,6 @@ assert.ok(candidateScore({assets:[{title:'Great Smog in London 1952',artist:'arc
 const captionFile=path.join(root,'phrase-captions.srt');writePhraseCaptions(captionFile,'One two three four five six seven eight',4,{wordsPerCue:4});
 const captionText=fs.readFileSync(captionFile,'utf8');assert.match(captionText,/00:00:00,000 --> 00:00:02,000/);assert.match(captionText,/One two three four/);assert.match(captionText,/five six seven eight/);
 fs.rmSync(root,{recursive:true,force:true});
-console.log('self-test: ok');
 
 
 const budgeted=fitNarrationBudget([{index:1,beat:'hook',narration:'But this deliberately long narration contains far too many words for a very short opening scene and needs trimming.'},{index:2,beat:'payoff',narration:'So the final consequence became clear after policy changed across London and beyond.'}],8);assert.ok(budgeted.every(x=>x.pacingBudget.finalWords<=x.pacingBudget.maxWords));assert.ok(budgeted.some(x=>x.pacingBudget.trimmed));
@@ -85,3 +87,4 @@ const retention=retentionAnalysis([{index:1,beat:'hook',narration:'But one hidde
 const paced=optimizePacing([{index:1,beat:'hook',narration:'But one hidden detail changed how London responded.'},{index:2,beat:'context',narration:'The dense polluted air remained over the city for several dangerous days.'}],8);assert.equal(paced.length,2);assert.ok(Math.abs(paced.reduce((n,x)=>n+x.durationHint,0)-8)<0.05);assert.ok(paced.every(x=>x.pacing.plannedWordsPerSecond>0));
 const repairTargets=repairTargetIndexes([{index:1,beat:'hook'},{index:2,beat:'context'},{index:3,beat:'payoff'}],[{index:1,candidateScore:55,narration:'This is an ordinary opening statement.',duration:3},{index:2,candidateScore:90,narration:'London changed policy after the disaster.',duration:3},{index:3,candidateScore:60,narration:'A closing statement.',duration:3}],2);assert.deepEqual(repairTargets,[1,3]);
 const rhythm=editingRhythmAnalysis([{index:1,visualType:'archive-motion',candidateScore:80,assets:[{title:'Same archive',source:'https://example.com/a',license:'CC BY',type:'image'}]},{index:2,visualType:'archive-motion',candidateScore:80,assets:[{title:'Same archive',source:'https://example.com/a',license:'CC BY',type:'image'}]},{index:3,visualType:'whiteboard',candidateScore:85,assets:[{title:'Generated whiteboard board',source:'local',license:'original',type:'whiteboard'}]},{index:4,visualType:'whiteboard',candidateScore:85,assets:[{title:'Generated whiteboard board',source:'local',license:'original',type:'whiteboard'}]}],[{index:1,beat:'hook'},{index:2,beat:'context'},{index:3,beat:'evidence'},{index:4,beat:'payoff'}]);assert.equal(rhythm.adjacentRepeats.length,1);assert.ok(rhythm.repairIndexes.includes(2));assert.ok(rhythm.score<100);
+console.log('self-test: ok');

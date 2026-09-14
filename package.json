@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node app/server.mjs",
-    "test": "node app/self-test.mjs"
+    "test": "node app/self-test.mjs",
+    "release:check": "bash scripts/release-check.sh"
   },
   "dependencies": {
     "express": "^5.1.0"

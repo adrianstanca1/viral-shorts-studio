@@ -40,6 +40,9 @@ services:
       PIXABAY_KEY: ${PIXABAY_KEY:-}
       FAL_KEY: ${FAL_KEY:-}
       PROVIDER_WORKER_TOKEN: ${PROVIDER_WORKER_TOKEN:-}
+      APP_AUTH_SECRET: ${APP_AUTH_SECRET:-}
+      FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-false}
+      WRITE_RATE_LIMIT: ${WRITE_RATE_LIMIT:-120}
     depends_on:
       ollama:
         condition: service_healthy

@@ -82,3 +82,6 @@ The text router is task-aware and local-first. Qwen3 1.7B handles fast work, Qwe
 
 ### OAuth-capable model tools
 The VPS now includes the official Gemini CLI and OpenAI Codex CLI for their supported interactive OAuth flows. Their consumer OAuth credentials are kept separate from Viral Shorts runtime inference: Google explicitly restricts third-party apps from piggybacking on Gemini CLI OAuth, and ChatGPT/Codex sign-in is not treated as free general-purpose OpenAI API capacity. OpenRouter is different: its official PKCE OAuth flow exchanges authorization for a user-controlled API key, so the studio now maintains a live zero-price OpenRouter model catalog and can use that key once OAuth is completed through an HTTPS callback.
+
+## Owner authentication and request hardening
+The studio now has optional single-owner session authentication for public deployment. Set `APP_AUTH_SECRET` to a random value of at least 24 characters to enable the `/login` flow; the browser receives an HttpOnly, SameSite=Strict session cookie. Set `FORCE_SECURE_COOKIE=true` when the public entry point is HTTPS. `WRITE_RATE_LIMIT` controls the default mutating-request allowance per five-minute window (default 120). Health checks remain unauthenticated, while provider-worker calls can continue using the separate `PROVIDER_WORKER_TOKEN`. Security headers are emitted on all responses.
