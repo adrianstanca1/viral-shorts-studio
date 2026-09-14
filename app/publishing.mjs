@@ -31,8 +31,10 @@ export function createPublishJob(root,project,{platform='youtube-shorts',schedul
 export function listPublishJobs(root,{projectId='',status=''}={}){
   return read(root).jobs.filter(x=>(!projectId||x.projectId===projectId)&&(!status||x.status===status));
 }
+export function getPublishJob(root,id){return read(root).jobs.find(x=>x.id===id)||null;}
+export function updatePublishJob(root,id,patch={}){const state=read(root),job=state.jobs.find(x=>x.id===id);if(!job)throw new Error('publish job not found');Object.assign(job,patch,{updatedAt:new Date().toISOString()});write(root,state);return job;}
 export function publishQueueSummary(root){
   const jobs=read(root).jobs,counts={};for(const j of jobs)counts[j.status]=(counts[j.status]||0)+1;
-  return {total:jobs.length,counts,externalPostingEnabled:false,mode:'approval-gated-manual-export'};
+  return {total:jobs.length,counts,externalPostingEnabled:false,mode:'approval-gated-connector-ready'};
 }
 export function deletePublishJobsForProject(root,projectId){const state=read(root),before=state.jobs.length;state.jobs=state.jobs.filter(x=>x.projectId!==projectId);if(state.jobs.length!==before)write(root,state);return before-state.jobs.length;}
