@@ -22,3 +22,6 @@ Autonomous mode can run the pipeline, but publishing remains approval-gated by d
 Runtime credentials stay outside Git in `../secrets/`; only non-secret provider status/registry metadata is versioned.
 
 - Scene variant archive/comparison: regenerating a scene preserves the previous cut; saved variants can be previewed and restored without rerendering unaffected scenes.
+## Automatic candidate selection
+Important scenes (hook, midpoint, finale) generate three visual candidates by default. Candidates are scored for source relevance, license quality, visual diversity and real-motion footage; the strongest candidate is selected automatically while all candidates remain available in the browser editor for manual override. Set `autoCandidates:false` or `candidateCount:1` in the project request to disable this behavior.
+

@@ -35,7 +35,7 @@ app.get('/api/stats',(req,res)=>{
 });
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
-  stages:['research','source-check','hook','script','storyboard','2-assets-per-scene','motion-clips','voice','captions','render','credits','qa'],
+  stages:['research','source-check','hook','script','storyboard','candidate-generation','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
   formats:['9:16','30s','45s','60s','90s'],
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],
   optionalProviders:['Pexels','Pixabay','OpenRouter','Tavily','fal.ai','future image-to-video adapters'],
@@ -49,7 +49,7 @@ app.post('/api/projects',(req,res)=>{
   if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)return res.status(429).json({error:'Queue full; retry after a project finishes'});
   if(body.duration!==undefined && (![30,45,60,90].includes(Number(body.duration))))return res.status(400).json({error:'Choose 30, 45, 60 or 90 seconds'});
   const niche=niches.includes(body.niche)?body.niche:'storytelling';
-  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,topic,duration:Number(body.duration||60),autonomous:true};
+  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,topic,duration:Number(body.duration||60),autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
   save(job); res.status(202).json(job);
   setImmediate(kick);
 });
