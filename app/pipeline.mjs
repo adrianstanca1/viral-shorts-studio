@@ -210,7 +210,8 @@ export function candidateScore(result,scene){
   const relevance=assets.reduce((n,a)=>n+relevanceScore(a,scene),0);
   const diversity=titles.size===assets.length?8:0;
   const motion=result.hasRealVideo?12:0;
-  return Math.round(clamp(45+licensed*4+Math.min(20,relevance)+diversity+motion,0,100));
+  const whiteboard=result.visualType==='whiteboard' ? (['evidence','context'].includes(scene.beat)?25:['setup','escalation'].includes(scene.beat)?14:6) : 0;
+  return Math.round(clamp(45+licensed*4+Math.min(20,relevance)+diversity+motion+whiteboard,0,100));
 }
 
 async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
@@ -224,23 +225,31 @@ async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
   const python=process.env.WHITEBOARD_PYTHON||'/opt/whiteboard/bin/python', adapter=process.env.WHITEBOARD_ADAPTER||'/app/python/whiteboard_scene.py';
   const raw=await run(python,[adapter,'--spec','whiteboard.json'],{cwd:sceneDir,env:{...process.env,FFMPEG_PATH:'ffmpeg',RENDER_THREADS:'2'}});
   let whiteboard={};try{whiteboard=JSON.parse(raw.trim().split('\n').at(-1))}catch{}
-  return {...scene,duration:Number(duration.toFixed(2)),assets:[{title:'Generated whiteboard board',source:'local',license:'original',artist:'Viral Shorts Studio',type:'whiteboard',file:'board.png'}],file:output,captions:srt,hasRealVideo:false,whiteboard,narrationReused:!!sharedNarration,candidateScore:88};
+  return {...scene,duration:Number(duration.toFixed(2)),assets:[{title:'Generated whiteboard board',source:'local',license:'original',artist:'Viral Shorts Studio',type:'whiteboard',file:'board.png'}],file:output,captions:srt,hasRealVideo:false,visualType:'whiteboard',whiteboard,narrationReused:!!sharedNarration};
 }
 
 async function makeSceneCandidates(scene,dir,fallbackQuery,mediaPool,videoPool,count=1){
+  const hybrid=scene.style==='hybrid';
   const total=scene.style==='whiteboard'?1:clamp(Number(count)||1,1,4), results=[];
   let sharedNarration=null;
-  if(total>1){
+  if(total>1 || hybrid){
     const sharedDir=ensure(path.join(dir,'candidates',`scene-${String(scene.index).padStart(2,'0')}`,'shared'));
     const wav=path.join(sharedDir,'voice.wav');
     const duration=await makeNarration(scene.narration,wav,scene.durationHint);
     sharedNarration={wav,duration};
   }
-  for(let i=0;i<total;i++){
-    const variantScene={...scene,variantSeed:Number(scene.variantSeed||0)+i};
-    const candidateDir=total===1?dir:ensure(path.join(dir,'candidates',`scene-${String(scene.index).padStart(2,'0')}`,`v${variantScene.variantSeed}`));
+  const archiveCount=hybrid?Math.max(1,total-1):total;
+  for(let i=0;i<archiveCount;i++){
+    const variantScene={...scene,style:hybrid?'documentary':scene.style,variantSeed:Number(scene.variantSeed||0)+i};
+    const candidateDir=(total===1&&!hybrid)?dir:ensure(path.join(dir,'candidates',`scene-${String(scene.index).padStart(2,'0')}`,`archive-${variantScene.variantSeed}`));
     const result=await makeScene(variantScene,candidateDir,fallbackQuery,mediaPool,videoPool,sharedNarration);
-    result.candidateScore=candidateScore(result,variantScene); results.push(result);
+    result.candidateScore=candidateScore(result,scene); results.push(result);
+  }
+  if(hybrid){
+    const whiteboardScene={...scene,style:'whiteboard',variantSeed:Number(scene.variantSeed||0)};
+    const candidateDir=ensure(path.join(dir,'candidates',`scene-${String(scene.index).padStart(2,'0')}`,'whiteboard'));
+    const result=await makeScene(whiteboardScene,candidateDir,fallbackQuery,mediaPool,videoPool,sharedNarration);
+    result.candidateScore=candidateScore(result,scene); results.push(result);
   }
   results.sort((a,b)=>b.candidateScore-a.candidateScore);
   return {selected:results[0],candidates:results};
@@ -307,7 +316,7 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   fs.writeFileSync(srt,`1\n${ts(0)} --> ${ts(duration)}\n${scene.narration}\n`);
   const assets=downloaded.map(({local,...a})=>({...a,file:path.basename(local)}));
   if(motionVideo){const {local,...v}=motionVideo;assets.unshift({...v,file:'remote-stream'});}
-  return {...scene,duration:Number(duration.toFixed(2)),assets,file:out,captions:srt,hasRealVideo:!!motionVideo,narrationReused:!!sharedNarration};
+  return {...scene,duration:Number(duration.toFixed(2)),assets,file:out,captions:srt,hasRealVideo:!!motionVideo,visualType:motionVideo?'archive-video':'archive-motion',narrationReused:!!sharedNarration};
 }
 
 export async function produceProject(project,root,onUpdate=()=>{}){
@@ -368,9 +377,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       let pack,last; const count=importantIndexes.has(scene.index)?autoCandidateCount:1;
       for(let attempt=0;attempt<2;attempt++){try{pack=await makeSceneCandidates(scene,dir,project.topic,mediaPool,videoPool,count);break;}catch(e){last=e;}}
       if(!pack)throw last;
-      if(count>1){
+      if(pack.candidates.length>1){
         project.sceneVariants ||= {}; project.sceneVariants[String(scene.index)] ||= [];
-        const archived=pack.candidates.map(c=>({id:crypto.randomUUID(),index:scene.index,createdAt:new Date().toISOString(),variantSeed:Number(c.variantSeed||0),duration:c.duration,assets:c.assets||[],hasRealVideo:!!c.hasRealVideo,file:c.file,captions:c.captions,candidateScore:c.candidateScore,autoGenerated:true}));
+        const archived=pack.candidates.map(c=>({id:crypto.randomUUID(),index:scene.index,createdAt:new Date().toISOString(),variantSeed:Number(c.variantSeed||0),duration:c.duration,assets:c.assets||[],hasRealVideo:!!c.hasRealVideo,visualType:c.visualType||'unknown',file:c.file,captions:c.captions,candidateScore:c.candidateScore,autoGenerated:true}));
         project.sceneVariants[String(scene.index)].push(...archived);
         const selectedMeta=archived.find(v=>v.file===pack.selected.file); if(selectedMeta)pack.selected.variantId=selectedMeta.id;
       }
@@ -384,13 +393,22 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     update({status:'assembling',progress:90});
     const concat=path.join(dir,'final-list.txt');
     fs.writeFileSync(concat,scenes.map(s=>`file '${s.file}'`).join('\n')+'\n');
-    const final=path.join(dir,'final.mp4');
-    await run('ffmpeg',['-y','-f','concat','-safe','0','-i',concat,'-c','copy','-movflags','+faststart',final]);
+    const assembled=path.join(dir,'assembled.mp4'), final=path.join(dir,'final.mp4');
+    await run('ffmpeg',['-y','-f','concat','-safe','0','-i',concat,'-c','copy','-movflags','+faststart',assembled]);
+    const targetDuration=Number(project.duration), assembledDuration=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',assembled]));
+    if(Math.abs(assembledDuration-targetDuration)>.08){
+      const args=['-y','-i',assembled];
+      if(assembledDuration<targetDuration){const pad=Math.max(.05,targetDuration-assembledDuration);args.push('-vf',`tpad=stop_mode=clone:stop_duration=${pad.toFixed(3)}`,'-af',`apad=pad_dur=${pad.toFixed(3)}`);}
+      args.push('-t',String(targetDuration),'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-movflags','+faststart',final);
+      await run('ffmpeg',args);
+    }else fs.renameSync(assembled,final);
+    try{fs.rmSync(assembled,{force:true});}catch{}
     const credits=path.join(dir,'credits.json');
     saveJson(credits,{sources,assets:scenes.flatMap(s=>s.assets)});
     const actualDuration=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',final]));
     const durationDelta=Number((actualDuration-Number(project.duration)).toFixed(2));
     const realVideoScenes=scenes.filter(s=>s.hasRealVideo).length;
+    const visualMix=scenes.reduce((m,s)=>{const k=s.visualType||'unknown';m[k]=(m[k]||0)+1;return m;},{});
     const candidateScenes=Object.values(project.sceneVariants||{}).filter(v=>Array.isArray(v)&&v.some(x=>x.autoGenerated)).length;
     const candidateRenders=Object.values(project.sceneVariants||{}).flat().filter(x=>x.autoGenerated).length;
     const sourceCount=sources.length;
@@ -398,7 +416,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const slug=project.topic.replace(/[^a-z0-9 ]/gi,' ').trim();
     const publish={title:`${slug}: the part most people miss`.slice(0,90),description:`A fast, source-backed ${project.niche.replace('-', ' ')} short about ${slug}. Verify claims using the included credits before publishing.`,hashtags:['#shorts',`#${project.niche.replace(/-/g,'')}`,'#storytelling']};
     stageMetric(metrics,'totalSeconds',totalStarted);
-    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,candidateScenes,candidateRenders,durationDelta,vertical:true,audio:true,viralityScore},publish,metrics,completedAt:new Date().toISOString()});
+    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical:true,audio:true,viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
     update({status:'failed',error:String(error.message||error),failedAt:new Date().toISOString()});

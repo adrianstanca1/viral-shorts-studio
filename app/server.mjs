@@ -13,7 +13,7 @@ app.use(express.static(new URL('./public', import.meta.url).pathname));
 const PORT = Number(process.env.PORT || 3010);
 const DATA = process.env.DATA_DIR || '/app/data';
 const niches = ['true-crime','history','storytelling','fact-check'];
-const styles = ['documentary','cinematic','whiteboard'];
+const styles = ['documentary','cinematic','hybrid','whiteboard'];
 const jobs = new Map();
 let active=false;
 function kick(){
@@ -38,7 +38,7 @@ app.get('/api/stats',(req,res)=>{
 });
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
-  stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','candidate-generation','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
+  stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
   formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes'],
   styles,
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],

@@ -39,3 +39,7 @@ Each completed storyboard now produces `generation-prompts.json` plus `generativ
 - Higgsfield is represented as a connector handoff; the VPS does not spend Higgsfield credits automatically.
 - Video styles: Documentary, Cinematic, and Whiteboard animation. Whiteboard uses the CPU-only `whiteboard-animator` engine and renders each scene with narration/captions.
 - Generative media providers remain disabled until a no-charge generation path is verified at the actual generation endpoint.
+
+## Hybrid visual director
+
+The `hybrid` style automatically produces archival/motion and whiteboard candidates for key scenes, scores them using relevance, licensing, motion and beat suitability, then selects the strongest version while preserving alternatives in scene variant history. This gives visual variety without requiring a paid generative provider.
