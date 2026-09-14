@@ -56,6 +56,36 @@ export function narrativeArcAnalysis(scenes=[]){
   return {score:Math.max(0,Math.round(100-avgRisk)),highRiskScenes:rows.filter(x=>x.risk>=25).map(x=>x.index),scenes:rows};
 }
 
+export function repairNarrativeArc(scenes=[],sources=[],topic=''){
+  const facts=rankFacts(topic,sources).map(f=>({...f,causal:/\b(led|result|response|changed|caused|passed|law|act|policy|reform|impact|effect)\b/i.test(String(f.text||''))}));
+  const evidenceLike=f=>/\b\d+(?:\.\d+)?%?\b|\b(19|20)\d{2}\b|\b(report|record|document|study|investigation|court|police|government|official|estimated|statistics)\b/i.test(String(f?.text||''));
+  const payoffLike=f=>f?.causal||/\b(led|result|response|changed|caused|passed|law|act|policy|reform|impact|effect)\b/i.test(String(f?.text||''));
+  const repaired=scenes.map(x=>({...x})),repairs=[];
+  for(let i=0;i<repaired.length;i++){
+    const scene=repaired[i],baseAnalysis=narrativeArcAnalysis(repaired),row=baseAnalysis.scenes[i]||{risk:0,reasons:[]};
+    const relevant=row.reasons.filter(x=>['adjacent-fact-repeat','earlier-fact-repeat','weak-evidence','unresolved-payoff'].includes(x));
+    if(!relevant.length){scene.arcRepair={changed:false,reasons:[]};continue;}
+    const used=new Set(repaired.map((x,j)=>j===i?'':clean(x.narration)).filter(Boolean));
+    let options=facts.filter(f=>!used.has(clean(f.text)));
+    if(relevant.includes('weak-evidence'))options=options.filter(evidenceLike);
+    if(relevant.includes('unresolved-payoff'))options=options.filter(payoffLike);
+    let best=null;
+    for(const fact of options.slice(0,8)){
+      const candidate=clean(fact.text),before=narrationQuality(scene.narration,{beat:scene.beat}),after=narrationQuality(candidate,{beat:scene.beat});
+      if(after+5<before)continue;
+      const trial=repaired.map((x,j)=>j===i?{...x,narration:candidate,sourceIndex:fact.sourceIndex}:x);
+      const analysis=narrativeArcAnalysis(trial),trialRow=analysis.scenes[i]||{risk:100};
+      const improves=analysis.score>baseAnalysis.score||(analysis.score===baseAnalysis.score&&trialRow.risk<row.risk);
+      if(!improves)continue;
+      if(!best||analysis.score>best.analysis.score||(analysis.score===best.analysis.score&&trialRow.risk<best.row.risk))best={fact,candidate,before,after,analysis,row:trialRow};
+    }
+    if(!best){scene.arcRepair={changed:false,reasons:relevant};continue;}
+    repaired[i]={...scene,narration:best.candidate,sourceIndex:best.fact.sourceIndex,arcRepair:{changed:true,reasons:relevant,beforeScore:best.before,afterScore:best.after}};
+    repairs.push({index:scene.index,reasons:relevant,beforeScore:best.before,afterScore:best.after});
+  }
+  return {scenes:repaired,analysis:narrativeArcAnalysis(repaired),repairs};
+}
+
 export function narrationQuality(text,{beat='context'}={}){
   const t=clean(text),words=t.split(/\s+/).filter(Boolean);let score=100;
   if(words.length<7)score-=25;if(words.length>18)score-=Math.min(35,(words.length-18)*4);

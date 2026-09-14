@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { writeGenerationQueue, generativeStatus } from './generative-router.mjs';
 import { listAiCandidates } from './ai-candidate-router.mjs';
-import { rankSources, rankFacts, selectNarrativeFacts, narrativeArcAnalysis, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
+import { rankSources, rankFacts, selectNarrativeFacts, narrativeArcAnalysis, repairNarrativeArc, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
 
 const UA = 'ViralShortsStudio/0.2 (self-hosted creator tool)';
 const mediaBreakers=new Map();
@@ -464,12 +464,14 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     }
     storyboard=repairNarration(storyboard,sources,project.topic);
     const arcBefore=narrativeArcAnalysis(storyboard);
+    const arcRepair=repairNarrativeArc(storyboard,sources,project.topic);
+    storyboard=arcRepair.scenes;
     const narrationRepairs=storyboard.filter(s=>s.narrationRepair?.changed).map(s=>({index:s.index,reasons:s.narrationRepair.reasons,beforeScore:s.narrationRepair.beforeScore,afterScore:s.narrationRepair.afterScore}));
     storyboard=fitNarrationBudget(storyboard,Number(project.duration));
     storyboard=enrichVisualDirection(storyboard,sources,project.topic,project.style||'documentary');
     storyboard=optimizePacing(storyboard,Number(project.duration));
     const arcAfter=narrativeArcAnalysis(storyboard);
-    update({storyboard,pacingOptimized:true,narrationRepair:{count:narrationRepairs.length,scenes:narrationRepairs},narrativeArc:{before:arcBefore,after:arcAfter},visualDirectionVersion:3});
+    update({storyboard,pacingOptimized:true,narrationRepair:{count:narrationRepairs.length,scenes:narrationRepairs},narrativeArc:{before:arcBefore,after:arcAfter,repairs:arcRepair.repairs},visualDirectionVersion:3});
     const mediaStarted=nowMs();
     const cacheKey=`${project.topic}|media-v3`;
     const mediaCached=await cachedJson(root,'media',cacheKey,12*60*60*1000,async()=>{
