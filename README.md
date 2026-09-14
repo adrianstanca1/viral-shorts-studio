@@ -6,7 +6,7 @@ Core niches: true crime, history, storytelling, fact checks.
 Pipeline:
 1. Discover topic/angle
 2. Research and verify sources
-3. Generate hook + 30–90s script
+3. Generate hook + 30s, 60s, or 90s script
 4. Create scene/storyboard plan
 5. Generate visual prompts and source licensed/public-domain media
 6. Generate narration/voice plan
