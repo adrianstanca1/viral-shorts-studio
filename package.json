@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node app/server.mjs"
+    "start": "node app/server.mjs",
+    "test": "node app/self-test.mjs"
   },
   "dependencies": {
     "express": "^5.1.0"

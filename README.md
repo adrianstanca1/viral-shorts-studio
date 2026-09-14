@@ -56,3 +56,7 @@ The bridge keeps provider billing outside the render worker: connector jobs are 
 
 ### Free AI scene budget manager
 The studio can rank finished scenes for cloud AI enhancement without spending blindly. `GET /api/projects/:id/ai-generation-plan` previews priorities; `POST` stores a plan and can create deduplicated pending provider jobs when `createJobs:true`. Planning favors hook/payoff and weak visual scores, skips scenes that already have AI or strong visuals, and always records `freeOnly:true` / `paidFallback:false`. Provider results are harvested later through the verified-free provider job bridge.
+
+### Provider job reliability and security
+
+Provider result ingestion now validates public HTTPS URLs, rejects local/private literal IP targets, validates image/video result kinds before changing job state, and preserves AI provider/score metadata when scene variants are archived or restored. `GET /api/provider-jobs` also returns a filtered job list (`status`, `provider`, `projectId`) alongside queue counts so an external free-provider worker can safely harvest pending jobs. A built-in `npm test` self-test covers the free-only job lifecycle, URL guardrails and AI scene-budget selection.

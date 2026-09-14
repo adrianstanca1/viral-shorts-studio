@@ -1,16 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { isPublicHttps } from './url-safety.mjs';
 
 const allowedProviders=new Set(['higgsfield','nvidia','huggingface','fal','external']);
-function safeHttps(value){
-  let u;try{u=new URL(String(value||''))}catch{return false}
-  if(u.protocol!=='https:'||u.username||u.password)return false;
-  const h=u.hostname.toLowerCase();
-  if(h==='localhost'||h==='::1'||h.endsWith('.local')||h.startsWith('127.')||h.startsWith('10.')||h.startsWith('192.168.'))return false;
-  const m=h.match(/^172\.(\d+)\./);if(m&&Number(m[1])>=16&&Number(m[1])<=31)return false;
-  return true;
-}
 
 function dir(root){const d=path.join(root,'provider-jobs');fs.mkdirSync(d,{recursive:true});return d}
 function file(root,id){return path.join(dir(root),`${id}.json`)}
@@ -29,13 +22,19 @@ export function createProviderJob(root,input={}){
 export function getProviderJob(root,id){try{return JSON.parse(fs.readFileSync(file(root,id),'utf8'))}catch{return null}}
 export function resolveProviderJob(root,id,input={}){
   const record=getProviderJob(root,id);if(!record)throw new Error('provider job not found');
-  const url=String(input.url||'').trim();if(!safeHttps(url))throw new Error('result url must be public HTTPS');
-  record.status='ready';record.url=url;record.resultKind=String(input.kind||record.kind||'video');record.updatedAt=new Date().toISOString();
+  const url=String(input.url||'').trim();if(!isPublicHttps(url))throw new Error('result url must be public HTTPS');
+  const resultKind=String(input.kind||record.kind||'video').toLowerCase();if(!['image','video'].includes(resultKind))throw new Error('unsupported result kind');
+  if(record.status==='failed')throw new Error('failed provider job cannot be resolved; create a new job');
+  record.status='ready';record.url=url;record.resultKind=resultKind;record.updatedAt=new Date().toISOString();
   fs.writeFileSync(file(root,id),JSON.stringify(record,null,2));return record;
 }
 export function failProviderJob(root,id,error='provider generation failed'){
   const record=getProviderJob(root,id);if(!record)throw new Error('provider job not found');
   record.status='failed';record.error=String(error).slice(0,500);record.updatedAt=new Date().toISOString();fs.writeFileSync(file(root,id),JSON.stringify(record,null,2));return record;
+}
+export function listProviderJobs(root,filter={}){
+  const items=fs.readdirSync(dir(root)).filter(x=>x.endsWith('.json')).flatMap(x=>{try{return [JSON.parse(fs.readFileSync(path.join(dir(root),x),'utf8'))]}catch{return []}});
+  return items.filter(x=>(!filter.status||x.status===filter.status)&&(!filter.provider||x.provider===filter.provider)&&(!filter.projectId||x.projectId===filter.projectId)).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 export function providerJobStatus(root){
   const d=dir(root),items=fs.readdirSync(d).filter(x=>x.endsWith('.json')).flatMap(x=>{try{return [JSON.parse(fs.readFileSync(path.join(d,x),'utf8'))]}catch{return []}});
