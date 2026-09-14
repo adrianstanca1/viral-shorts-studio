@@ -34,7 +34,7 @@ export function narrationQuality(text,{beat='context'}={}){
   if(!/[.!?]$/.test(t))score-=3;
   if(beat==='hook'&&!/[?!]|\b(but|until|except|actually|hidden|missed|why|how)\b|\b\d{2,4}\b/i.test(t))score-=12;
   if(beat==='payoff'&&!/\b(so|because|therefore|ultimately|result|changed|meant|shows|explains|response|responded|led|passed|act|law|policy)\b/i.test(t))score-=10;
-  if(/\b(?:the|a|an|of|to|from|with|including|great|clean|led|caused|became|remained)\.$/i.test(t)||/\b(?:and|or)\s+(?:the|a|an)\s+\w+\.$/i.test(t))score-=30;
+  if(/\b(?:the|a|an|of|to|from|with|including|great|clean|led|caused|became|remained|that|which|who|whose|where|when|because|although|while|whether)\.$/i.test(t)||/\b(?:and|or)\s+(?:the|a|an)\s+\w+\.$/i.test(t)||/\b(?:a|an)\s+(?:dramatic|major|significant|severe|important|deadly|new|further|future|public)\.$/i.test(t)||/^(?:prior to|before|after|during|following|despite|because of)\b[^.!?]{0,90}[.!?]$/i.test(t))score-=30;
   return Math.max(0,Math.round(score));
 }
 export function sceneAcceptance(score,beat='context'){
@@ -88,14 +88,19 @@ export function fitNarrationBudget(scenes=[],targetDuration=60){
     const reserve=Math.max(0,(left-1)*7),limit=Math.max(7,Math.min(preferred,remaining-reserve));
     let trimmed=words;
     if(words.length>limit){
-      const firstClause=clean(scene.narration).split(/[,;:—–](?:\s+|$)/)[0].split(/\s+/).filter(Boolean);
-      trimmed=firstClause.length>=7&&firstClause.length<=limit?firstClause:words.slice(0,limit);
-      const dangling=/^(?:a|an|the|and|or|but|of|to|in|on|for|with|from|at|by|as|into|including|through|after|before)$/i;
+      const text=clean(scene.narration), clauses=text.split(/[,;:—–](?:\s+|$)/).map(x=>x.trim()).filter(Boolean);
+      const dependent=/^(?:prior to|before|after|during|following|despite|because of)\b/i;
+      const firstClause=(clauses[0]||'').split(/\s+/).filter(Boolean), secondClause=(clauses[1]||'').split(/\s+/).filter(Boolean);
+      const relativeIndex=words.slice(0,limit+1).findIndex((w,j)=>j>=7&&/^(?:that|which|who|whose|where|when|because|although|while|including)$/i.test(String(w).replace(/[^a-z]/gi,'')));
+      if(dependent.test(clauses[0]||'')&&secondClause.length>=7)trimmed=secondClause.slice(0,limit);
+      else if(relativeIndex>=7)trimmed=words.slice(0,relativeIndex);
+      else trimmed=firstClause.length>=7&&firstClause.length<=limit&&!dependent.test(clauses[0]||'')?firstClause:words.slice(0,limit);
+      const dangling=/^(?:a|an|the|and|or|but|of|to|in|on|for|with|from|at|by|as|into|including|through|after|before|that|which|who|whose|where|when|because|although|while|whether)$/i;
       while(trimmed.length>7&&dangling.test(String(trimmed.at(-1)||'').replace(/[^a-z]/gi,'')))trimmed.pop();
     }
     remaining-=trimmed.length;
     let narration=trimmed.join(' ').replace(/[,:;]+$/,'');
-    narration=narration.replace(/\s+(?:and|or)\s+the\s+\w+[.!?]?$/i,'').replace(/\s+to\s+the\s+\w+[.!?]?$/i,'').replace(/[,;]?\s+(?:then|including|led)[.!?]?$/i,'').trim();
+    narration=narration.replace(/\s+(?:and|or)\s+the\s+\w+[.!?]?$/i,'').replace(/\s+to\s+the\s+\w+[.!?]?$/i,'').replace(/\s+(?:a|an)\s+(?:dramatic|major|significant|severe|important|deadly|new|further|future|public)[.!?]?$/i,'').replace(/[,;]?\s+(?:then|including|led)[.!?]?$/i,'').trim();
     if(narration&&!/[.!?]$/.test(narration))narration+='.';
     const finalWords=narration.split(/\s+/).filter(Boolean).length;
     return {...scene,narration,pacingBudget:{originalWords:words.length,finalWords,maxWords:limit,trimmed:finalWords<words.length}};
