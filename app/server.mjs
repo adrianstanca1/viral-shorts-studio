@@ -13,6 +13,7 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openrouter-catalog.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
+import { recoverProjectState } from './recovery.mjs';
 
 const app = express();
 app.use(express.json({limit:'2mb'}));
@@ -247,7 +248,7 @@ app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if
 app.get('/api/projects/:id/export',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});res.setHeader('Content-Disposition',`attachment; filename="${downloadName(j,'project.json')}"`);res.json(publicExport(j));});
 app.delete('/api/projects/:id',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});jobs.delete(j.id);fs.rmSync(projectDir(j.id),{recursive:true,force:true});res.json({deleted:true,id:j.id});});
 
-for(const job of list()){if(!['complete','failed','queued'].includes(job.status)){job.status='queued';job.recoveredAt=new Date().toISOString();delete job.error;delete job.failedAt;save(job);}}
+for(const job of list()){const recovered=recoverProjectState(job);if(recovered.changed)save(job);}
 reconcileProviderJobs(DATA);verifyProviders(DATA).catch(()=>{});refreshOpenRouterFreeCatalog().catch(()=>{});setInterval(()=>reconcileProviderJobs(DATA),30000).unref();setInterval(()=>verifyProviders(DATA).catch(()=>{}),15*60*1000).unref();setInterval(()=>refreshOpenRouterFreeCatalog().catch(()=>{}),30*60*1000).unref();
 setInterval(()=>{if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});},60000).unref();
 setImmediate(()=>{kick();if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});});

@@ -11,6 +11,7 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
+import { recoverProjectState } from './recovery.mjs';
 import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
@@ -52,6 +53,15 @@ const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,pr
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);
 assert.equal(plan.freeOnly,true);assert.equal(plan.paidFallback,false);
 const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);
+const recoveryExists=new Set(['/ok/scene1.mp4','/ok/scene2.mp4','/ok/final.mp4','/ok/credits.json']);
+const intact={status:'complete',progress:100,storyboard:[{index:1},{index:2}],scenes:[{index:1,file:'/ok/scene1.mp4'},{index:2,file:'/ok/scene2.mp4'}],render:{file:'/ok/final.mp4',credits:'/ok/credits.json'}};
+assert.equal(recoverProjectState(structuredClone(intact),{exists:x=>recoveryExists.has(x)}).changed,false);
+const damaged=structuredClone(intact);damaged.render.file='/missing/final.mp4';damaged.qa={launchReady:true};damaged.completedAt='old';
+const recoveredComplete=recoverProjectState(damaged,{exists:x=>recoveryExists.has(x),now:()=> '2026-09-14T00:00:00.000Z'});
+assert.equal(recoveredComplete.changed,true);assert.equal(recoveredComplete.job.status,'queued');assert.equal(recoveredComplete.job.progress,85);assert.equal(recoveredComplete.job.render,undefined);assert.equal(recoveredComplete.job.qa,undefined);
+const interrupted=recoverProjectState({status:'assembling',progress:90,storyboard:[{index:1},{index:2}],scenes:[{index:1,file:'/ok/scene1.mp4'},{index:2,file:'/missing/scene2.mp4'}],render:{file:'/missing/final.mp4'}},{exists:x=>recoveryExists.has(x)});
+assert.equal(interrupted.job.status,'queued');assert.equal(interrupted.job.scenes.length,1);assert.equal(interrupted.job.render,undefined);
+
 const {writePhraseCaptions,visualAssetScore,candidateScore,repairTargetIndexes,editingRhythmAnalysis}=await import('./pipeline.mjs');
 const visualScene={beat:'hook',searchQuery:'Great Smog London 1952 streets',overlay:'Great Smog London',narration:'London was covered by deadly smog in 1952.',sourceTitle:'Great Smog of London'};
 assert.ok(visualAssetScore({title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'},visualScene)>visualAssetScore({title:'Generic flag icon',artist:'',license:'CC0',type:'image',source:'https://example.com'},visualScene));
