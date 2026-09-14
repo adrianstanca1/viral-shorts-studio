@@ -26,3 +26,15 @@ export function recoverProjectState(job,{exists=fs.existsSync,now=()=>new Date()
   }
   return {changed:false,job};
 }
+
+export function prepareProjectRetry(job,{now=()=>new Date().toISOString()}={}){
+  if(!job||typeof job!=='object')throw new Error('project required');
+  if(job.status!=='failed')throw new Error('only failed projects can be retried');
+  const at=job.failedAt||now(),stage=job.failedStage||'unknown',error=String(job.error||'Unknown generation error').slice(0,1200);
+  const failure={at,stage,error},history=Array.isArray(job.failureHistory)?[...job.failureHistory]:[];
+  const last=history.at(-1);if(!last||last.at!==failure.at||last.stage!==failure.stage||last.error!==failure.error)history.push(failure);
+  job.failureHistory=history.slice(-5);job.lastFailure=failure;job.status='queued';job.progress=0;
+  job.retryCount=Number(job.retryCount||0)+1;job.lastRetryAt=now();
+  delete job.error;delete job.failedStage;delete job.failedAt;
+  return job;
+}

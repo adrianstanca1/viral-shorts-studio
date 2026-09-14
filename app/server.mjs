@@ -14,7 +14,7 @@ import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openr
 import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
 import { authConfigured, assertLaunchSecurity, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
-import { recoverProjectState } from './recovery.mjs';
+import { recoverProjectState, prepareProjectRetry } from './recovery.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -163,7 +163,7 @@ app.post('/api/projects/:id/retry',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
   if(j.status!=='failed')return res.status(409).json({error:'Only failed projects can be retried'});
   if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)return res.status(429).json({error:'Queue full'});
-  j.status='queued';j.progress=0;j.retryCount=Number(j.retryCount||0)+1;j.lastRetryAt=new Date().toISOString();delete j.error;save(j);setImmediate(kick);res.status(202).json(j);
+  prepareProjectRetry(j);save(j);setImmediate(kick);res.status(202).json(j);
 });
 
 function archiveSceneVariant(j,index){
