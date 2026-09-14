@@ -79,3 +79,6 @@ Text routing now supports both local Ollama models and Ollama Cloud through the 
 
 ### Text model portfolio
 The text router is task-aware and local-first. Qwen3 1.7B handles fast work, Qwen3 4B handles stronger/safety-sensitive storyboarding, and guarded cloud portfolios are prepared for Ollama Cloud and Hugging Face. Cloud providers use circuit breakers on authentication/quota failures and remain disabled unless their explicit runtime gates are enabled; no paid fallback is allowed.
+
+### OAuth-capable model tools
+The VPS now includes the official Gemini CLI and OpenAI Codex CLI for their supported interactive OAuth flows. Their consumer OAuth credentials are kept separate from Viral Shorts runtime inference: Google explicitly restricts third-party apps from piggybacking on Gemini CLI OAuth, and ChatGPT/Codex sign-in is not treated as free general-purpose OpenAI API capacity. OpenRouter is different: its official PKCE OAuth flow exchanges authorization for a user-controlled API key, so the studio now maintains a live zero-price OpenRouter model catalog and can use that key once OAuth is completed through an HTTPS callback.

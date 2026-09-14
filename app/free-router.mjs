@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 
 export class FreeRouter {
   constructor({env=process.env,fetcher=fetch,now=Date.now,stateFile=env.ROUTER_STATE_FILE}={}) {
@@ -10,7 +11,8 @@ export class FreeRouter {
   }
   save(){if(!this.stateFile)return;fs.mkdirSync(path.dirname(this.stateFile),{recursive:true});fs.writeFileSync(this.stateFile+'.tmp',JSON.stringify(this.state),{mode:0o600});fs.renameSync(this.stateFile+'.tmp',this.stateFile);}
   models(){
-    return [...new Set([this.env.OPENROUTER_MODEL,...(this.env.OPENROUTER_FALLBACK_MODELS||'').split(','),'openrouter/free'].filter(m=>m && (m==='openrouter/free'||/^[\w.-]+\/[\w.-]+:free$/.test(m))))].slice(0,3);
+    const dynamic=preferredOpenRouterFreeModels(12);
+    return [...new Set([this.env.OPENROUTER_MODEL,...(this.env.OPENROUTER_FALLBACK_MODELS||'').split(','),...dynamic,'openrouter/free'].filter(m=>m && (m==='openrouter/free'||/^[\w.-]+\/[\w.-]+:free$/.test(m))))].slice(0,12);
   }
   status(){
     const key=this.env.OPENROUTER_API_KEY||this.env.OPENROUTER_KEY;
