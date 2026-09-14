@@ -52,7 +52,7 @@ const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,pr
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);
 assert.equal(plan.freeOnly,true);assert.equal(plan.paidFallback,false);
 const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);
-const {writePhraseCaptions,visualAssetScore,candidateScore,repairTargetIndexes}=await import('./pipeline.mjs');
+const {writePhraseCaptions,visualAssetScore,candidateScore,repairTargetIndexes,editingRhythmAnalysis}=await import('./pipeline.mjs');
 const visualScene={beat:'hook',searchQuery:'Great Smog London 1952 streets',overlay:'Great Smog London',narration:'London was covered by deadly smog in 1952.',sourceTitle:'Great Smog of London'};
 assert.ok(visualAssetScore({title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'},visualScene)>visualAssetScore({title:'Generic flag icon',artist:'',license:'CC0',type:'image',source:'https://example.com'},visualScene));
 assert.ok(candidateScore({assets:[{title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'}],hasRealVideo:false,visualType:'archive-motion'},visualScene)>=50);
@@ -68,9 +68,10 @@ const repaired=repairNarration([
   {index:1,beat:'hook',narration:'London had a smog event.',sourceIndex:0},
   {index:2,beat:'context',narration:'London had a smog event.',sourceIndex:0},
   {index:3,beat:'payoff',narration:'Clean air laws followed.',sourceIndex:0}
-],sampleSources);
-assert.equal(repaired.length,3);assert.ok(repaired.some(x=>x.narrationRepair.changed));assert.ok(repaired[0].narrationQuality===undefined||repaired[0].narrationRepair.afterScore>=repaired[0].narrationRepair.beforeScore);
+],sampleSources,'Great Smog London');
+assert.equal(repaired.length,3);assert.ok(repaired.some(x=>x.narrationRepair.changed));assert.ok(repaired[0].narrationQuality===undefined||repaired[0].narrationRepair.afterScore>=repaired[0].narrationRepair.beforeScore);assert.ok(repaired.filter(x=>x.narrationRepair.changed).every(x=>x.narration.trim().endsWith('.')||x.narration.trim().endsWith('!')||x.narration.trim().endsWith('?')));
 
 const retention=retentionAnalysis([{index:1,beat:'hook',narration:'But one hidden detail changed how London responded.',duration:3},{index:2,beat:'payoff',narration:'So the disaster ultimately changed clean air policy.',duration:3}]);assert.ok(retention.score>=70);
 const paced=optimizePacing([{index:1,beat:'hook',narration:'But one hidden detail changed how London responded.'},{index:2,beat:'context',narration:'The dense polluted air remained over the city for several dangerous days.'}],8);assert.equal(paced.length,2);assert.ok(Math.abs(paced.reduce((n,x)=>n+x.durationHint,0)-8)<0.05);assert.ok(paced.every(x=>x.pacing.plannedWordsPerSecond>0));
 const repairTargets=repairTargetIndexes([{index:1,beat:'hook'},{index:2,beat:'context'},{index:3,beat:'payoff'}],[{index:1,candidateScore:55,narration:'This is an ordinary opening statement.',duration:3},{index:2,candidateScore:90,narration:'London changed policy after the disaster.',duration:3},{index:3,candidateScore:60,narration:'A closing statement.',duration:3}],2);assert.deepEqual(repairTargets,[1,3]);
+const rhythm=editingRhythmAnalysis([{index:1,visualType:'archive-motion',candidateScore:80,assets:[{title:'Same archive',source:'https://example.com/a',license:'CC BY',type:'image'}]},{index:2,visualType:'archive-motion',candidateScore:80,assets:[{title:'Same archive',source:'https://example.com/a',license:'CC BY',type:'image'}]},{index:3,visualType:'whiteboard',candidateScore:85,assets:[{title:'Generated whiteboard board',source:'local',license:'original',type:'whiteboard'}]},{index:4,visualType:'whiteboard',candidateScore:85,assets:[{title:'Generated whiteboard board',source:'local',license:'original',type:'whiteboard'}]}],[{index:1,beat:'hook'},{index:2,beat:'context'},{index:3,beat:'evidence'},{index:4,beat:'payoff'}]);assert.equal(rhythm.adjacentRepeats.length,1);assert.ok(rhythm.repairIndexes.includes(2));assert.ok(rhythm.score<100);

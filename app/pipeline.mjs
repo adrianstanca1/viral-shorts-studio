@@ -62,6 +62,19 @@ function nowMs(){return Date.now();}
 function stageMetric(metrics,name,start){metrics[name]=Number(((Date.now()-start)/1000).toFixed(2));}
 
 function tokens(s=''){return new Set(cleanText(s).toLowerCase().split(/[^a-z0-9]+/).filter(x=>x.length>2));}
+function assetKey(asset={}){return cleanText(asset.title||asset.source||asset.url||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().slice(0,120);}
+export function editingRhythmAnalysis(scenes=[],storyboard=[]){
+  const adjacentRepeats=[],repeatRepair=[],runRepair=[];let longestRun=0,run=0,lastType=null;
+  const repeatableKeys=scene=>new Set((scene?.assets||[]).filter(a=>a?.type!=='whiteboard'&&a?.source!=='local'&&a?.license!=='original').map(assetKey).filter(Boolean));
+  for(let i=0;i<scenes.length;i++){const scene=scenes[i]||{},keys=repeatableKeys(scene);
+    if(i){const prev=scenes[i-1]||{},prevKeys=repeatableKeys(prev),shared=[...keys].filter(k=>prevKeys.has(k));if(shared.length){adjacentRepeats.push({from:prev.index,to:scene.index,assets:shared.slice(0,3)});repeatRepair.push(scene.index);}}
+    const type=scene.visualType||'unknown';run=type===lastType?run+1:1;lastType=type;longestRun=Math.max(longestRun,run);if(run>=4)runRepair.push(scene.index);
+  }
+  const keyBeats=new Set(['hook','evidence','payoff']);const interrupts=storyboard.filter(x=>keyBeats.has(x.beat)).map(plan=>{const scene=scenes.find(s=>s.index===plan.index);return {index:plan.index,beat:plan.beat,visualType:scene?.visualType||'missing',strong:!!scene&&(scene.hasRealVideo||scene.visualType==='whiteboard'||Number(scene.candidateScore||0)>=80)};});
+  const strong=interrupts.filter(x=>x.strong).length;const score=Math.max(0,Math.round(100-adjacentRepeats.length*18-Math.max(0,longestRun-3)*12-(interrupts.length?((interrupts.length-strong)/interrupts.length)*25:0)));
+  const maxRepairs=Math.max(1,Math.ceil(scenes.length*.25)),repairIndexes=[...new Set([...repeatRepair,...runRepair])].slice(0,maxRepairs);
+  return {score,adjacentRepeats,longestVisualRun:longestRun,patternInterrupts:interrupts,repairIndexes};
+}
 const genericVisualTerms=/\b(logo|icon|symbol|coat of arms|flag|emblem|placeholder|stock photo)\b/i;
 export function visualAssetScore(asset,scene){
   const wanted=tokens(`${scene.searchQuery||''} ${scene.overlay||''} ${scene.narration||''} ${scene.sourceTitle||''}`);
@@ -339,8 +352,11 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   const candidates=[...mediaPool.slice(poolStart,poolStart+4),...await commonsImages(`${scene.searchQuery} ${variant?`variation ${variant}`:''}`.trim(),8).catch(()=>[])];
   if(candidates.length<6) candidates.push(...await commonsImages(scene.searchQuery.split(' ').slice(0,4).join(' '),8).catch(()=>[]));
   if(fallbackQuery) candidates.push(...await commonsImages(fallbackQuery,12).catch(()=>[]));
+  const avoid=new Set((scene.avoidAssetKeys||[]).map(x=>String(x)));
   let unique=[...new Map(candidates.filter(x=>x?.url).map(x=>[x.url,x])).values()].sort((a,b)=>relevanceScore(b,scene)-relevanceScore(a,scene));
-  if(unique.length>2 && variant){const shift=variant%unique.length;unique=[...unique.slice(shift),...unique.slice(0,shift)];}
+  let novel=unique.filter(x=>!avoid.has(assetKey(x))),avoided=unique.filter(x=>avoid.has(assetKey(x)));
+  if(novel.length>2&&variant){const shift=variant%novel.length;novel=[...novel.slice(shift),...novel.slice(0,shift)];}
+  unique=[...novel,...avoided];
   const downloaded=[];
   for(let i=0;i<unique.length && downloaded.length<2;i++){
     const ext=path.extname(new URL(unique[i].url).pathname).slice(0,5)||'.jpg';
@@ -426,7 +442,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
       }
     }
-    storyboard=repairNarration(storyboard,sources);
+    storyboard=repairNarration(storyboard,sources,project.topic);
     const narrationRepairs=storyboard.filter(s=>s.narrationRepair?.changed).map(s=>({index:s.index,reasons:s.narrationRepair.reasons,beforeScore:s.narrationRepair.beforeScore,afterScore:s.narrationRepair.afterScore}));
     storyboard=fitNarrationBudget(storyboard,Number(project.duration));
     storyboard=enrichVisualDirection(storyboard,sources,project.topic,project.style||'documentary');
@@ -491,7 +507,20 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         if(improved){retry.selected.qualityGate=sceneAcceptance(after,plan.beat);scenes[pos]=retry.selected;}
       }catch(error){autoRepairs.push({index,beforeScore:Number(original.candidateScore||0),improved:false,error:String(error?.message||error).slice(0,180)});}
     }
-    update({scenes:[...scenes].sort((a,b)=>a.index-b.index),autoRepairs});
+    let editingRhythm=editingRhythmAnalysis(scenes,storyboard);const editRepairs=[];
+    for(const index of editingRhythm.repairIndexes.slice(0,2)){
+      const pos=scenes.findIndex(s=>s.index===index),original=scenes[pos],plan=storyboard.find(s=>s.index===index);if(pos<0||!original||!plan)continue;
+      const neighborAssets=[...(scenes[pos-1]?.assets||[]),...(scenes[pos+1]?.assets||[])].map(assetKey).filter(Boolean);
+      try{
+        const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+29,avoidAssetKeys:neighborAssets};
+        const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);const candidate=retry.selected;
+        const gate=sceneAcceptance(candidate?.candidateScore,plan.beat),trial=[...scenes];trial[pos]=candidate;const trialRhythm=editingRhythmAnalysis(trial,storyboard);
+        const improved=gate.accepted&&trialRhythm.score>editingRhythm.score;
+        editRepairs.push({index,beforeScore:editingRhythm.score,afterScore:trialRhythm.score,beforeVisual:Number(original.candidateScore||0),afterVisual:Number(candidate?.candidateScore||0),improved,reason:'editing-rhythm'});
+        if(improved){candidate.qualityGate=gate;scenes[pos]=candidate;editingRhythm=trialRhythm;}
+      }catch(error){editRepairs.push({index,beforeScore:editingRhythm.score,improved:false,error:String(error?.message||error).slice(0,180)});}
+    }
+    update({scenes:[...scenes].sort((a,b)=>a.index-b.index),autoRepairs,editRepairs,editingRhythm});
     stageMetric(metrics,'sceneRenderSeconds',sceneStarted);
     update({status:'assembling',progress:90});
     const concat=path.join(dir,'final-list.txt');
@@ -532,8 +561,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const slug=project.topic.replace(/[^a-z0-9 ]/gi,' ').trim();
     const publish={title:`${slug}: the part most people miss`.slice(0,90),description:`A fast, source-backed ${project.niche.replace('-', ' ')} short about ${slug}. Verify claims using the included credits before publishing.`,hashtags:['#shorts',`#${project.niche.replace(/-/g,'')}`,'#storytelling']};
     stageMetric(metrics,'totalSeconds',totalStarted);
-    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady&&averageNarrationScore>=78&&weakNarrationScenes.length<=Math.max(1,Math.floor(scenes.length*.2))&&averageVisualScore>=70&&weakVisualScenes.length<=Math.floor(scenes.length*.25);
-    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,narrationScores,averageNarrationScore,weakNarrationScenes,narrationRepair:project.narrationRepair||{count:0,scenes:[]},viralityScore},publish,metrics,completedAt:new Date().toISOString()});
+    editingRhythm=editingRhythmAnalysis(scenes,storyboard);const editingReady=editingRhythm.score>=70&&editingRhythm.adjacentRepeats.length<=Math.max(1,Math.floor(scenes.length*.15));
+    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady&&averageNarrationScore>=78&&weakNarrationScenes.length<=Math.max(1,Math.floor(scenes.length*.2))&&averageVisualScore>=70&&weakVisualScenes.length<=Math.floor(scenes.length*.25)&&editingReady;
+    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,editingRhythm,editingReady,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,narrationScores,averageNarrationScore,weakNarrationScenes,narrationRepair:project.narrationRepair||{count:0,scenes:[]},viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
     update({status:'failed',error:String(error.message||error),failedAt:new Date().toISOString()});
