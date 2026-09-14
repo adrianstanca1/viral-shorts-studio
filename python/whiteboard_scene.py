@@ -148,7 +148,7 @@ def render(spec):
                 caption = spec['captions']
                 if not caption.replace('-', '').replace('.', '').isalnum():
                     raise ValueError('Unexpected caption filename')
-                filters.append(f"subtitles={caption}:force_style='FontSize=18,PrimaryColour=&H00FFFFFF,Outline=2,MarginV=28'")
+                filters.append(f"subtitles={caption}:force_style='FontSize=22,Bold=1,PrimaryColour=&H00FFFFFF,Outline=2,MarginV=28'")
             cmd[-1:-1] = ['-vf', ','.join(filters), '-map', '0:v:0', '-map', '1:a:0',
                            '-af', 'apad', '-t', str(total), '-crf', str(spec['crf']),
                            '-threads', str(threads), '-filter_threads', '1', '-c:a', 'aac',

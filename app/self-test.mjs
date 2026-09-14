@@ -45,5 +45,8 @@ const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,pr
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);
 assert.equal(plan.freeOnly,true);assert.equal(plan.paidFallback,false);
 const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);
+const {writePhraseCaptions}=await import('./pipeline.mjs');
+const captionFile=path.join(root,'phrase-captions.srt');writePhraseCaptions(captionFile,'One two three four five six seven eight',4,{wordsPerCue:4});
+const captionText=fs.readFileSync(captionFile,'utf8');assert.match(captionText,/00:00:00,000 --> 00:00:02,000/);assert.match(captionText,/One two three four/);assert.match(captionText,/five six seven eight/);
 fs.rmSync(root,{recursive:true,force:true});
 console.log('self-test: ok');

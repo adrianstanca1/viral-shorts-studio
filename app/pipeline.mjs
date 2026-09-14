@@ -28,6 +28,25 @@ function safeName(s='asset'){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').
 function ensure(p){ fs.mkdirSync(p,{recursive:true}); return p; }
 function saveJson(p,v){ fs.writeFileSync(p+'.tmp',JSON.stringify(v,null,2)); fs.renameSync(p+'.tmp',p); }
 
+function subtitleTs(sec){
+  const ms=Math.max(0,Math.round(Number(sec||0)*1000));
+  const h=String(Math.floor(ms/3600000)).padStart(2,'0'),m=String(Math.floor(ms%3600000/60000)).padStart(2,'0');
+  const ss=String(Math.floor(ms%60000/1000)).padStart(2,'0'),mmm=String(ms%1000).padStart(3,'0');
+  return `${h}:${m}:${ss},${mmm}`;
+}
+export function writePhraseCaptions(file,text,duration,{wordsPerCue=4}={}){
+  const words=cleanText(text).split(/\s+/).filter(Boolean), total=Math.max(.25,Number(duration||0));
+  if(!words.length){fs.writeFileSync(file,'');return file;}
+  const cues=[]; let pos=0,index=1;
+  while(pos<words.length){
+    const chunk=words.slice(pos,pos+wordsPerCue),start=total*(pos/words.length),end=total*(Math.min(words.length,pos+chunk.length)/words.length);
+    cues.push(`${index++}\n${subtitleTs(start)} --> ${subtitleTs(Math.max(start+.18,end))}\n${chunk.join(' ')}\n`);pos+=chunk.length;
+  }
+  fs.writeFileSync(file,cues.join('\n'));return file;
+}
+const captionFilter=file=>`subtitles=${file}:force_style='FontName=DejaVu Sans,FontSize=20,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=3,Shadow=1,Alignment=2,MarginV=110'`;
+
+
 function cacheFile(root,kind,key){
   const hash=crypto.createHash('sha256').update(String(key)).digest('hex').slice(0,24);
   return path.join(ensure(path.join(root,'cache',kind)),`${hash}.json`);
@@ -218,8 +237,7 @@ export function candidateScore(result,scene){
 async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
   const wav=sharedNarration?.wav||path.join(sceneDir,'voice.wav');
   const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint);
-  const ts=(sec)=>{const ms=Math.max(0,Math.round(sec*1000));const h=String(Math.floor(ms/3600000)).padStart(2,'0'),m=String(Math.floor(ms%3600000/60000)).padStart(2,'0'),ss=String(Math.floor(ms%60000/1000)).padStart(2,'0'),mmm=String(ms%1000).padStart(3,'0');return `${h}:${m}:${ss},${mmm}`;};
-  const srt=path.join(sceneDir,'captions.srt');fs.writeFileSync(srt,`1\n${ts(0)} --> ${ts(duration)}\n${scene.narration}\n`);
+  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration);
   const output=path.join(sceneDir,'scene.mp4'), board=path.join(sceneDir,'board.png');
   const spec={title:String(title||'Whiteboard Short'),text:scene.narration,scene:scene.index,width:720,height:1280,duration,audio:wav,output,boardOutput:board,captions:'captions.srt',preset:'veryfast',crf:24};
   fs.writeFileSync(path.join(sceneDir,'whiteboard.json'),JSON.stringify(spec));
@@ -238,11 +256,12 @@ async function makeAiImportedScene(scene,sceneDir,ai,sharedNarration=null){
   if(ai.kind==='video')await makeVideoClip(media,visual,duration);else await makeImageClip(media,visual,duration,true);
   const overlayFile=path.join(sceneDir,'overlay.txt');fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
-  const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.72-text_h/2`;
-  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',draw,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-t',String(duration),out]);
+  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration);
+  const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.64-text_h/2`;
+  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-t',String(duration),out]);
   const promptTokens=tokens(ai.prompt||''), wanted=tokens(scene.visualPrompt||scene.searchQuery||''); let overlap=0;for(const t of wanted)if(promptTokens.has(t))overlap++;
   const providerBonus=ai.provider==='higgsfield'?10:ai.provider==='nvidia'?8:6, motion=ai.kind==='video'?12:5;
-  return {...scene,duration:Number(duration.toFixed(2)),assets:[{title:`AI ${ai.kind} candidate`,source:ai.url,license:'provider-generated',artist:ai.provider,type:`ai-${ai.kind}`,provider:ai.provider,jobId:ai.id}],file:out,hasRealVideo:ai.kind==='video',visualType:`ai-${ai.kind}`,aiProvider:ai.provider,aiJobId:ai.id,narrationReused:!!sharedNarration,candidateScore:Math.round(clamp(62+providerBonus+motion+Math.min(12,overlap*2),0,100))};
+  return {...scene,duration:Number(duration.toFixed(2)),captions:srt,assets:[{title:`AI ${ai.kind} candidate`,source:ai.url,license:'provider-generated',artist:ai.provider,type:`ai-${ai.kind}`,provider:ai.provider,jobId:ai.id}],file:out,hasRealVideo:ai.kind==='video',visualType:`ai-${ai.kind}`,aiProvider:ai.provider,aiJobId:ai.id,narrationReused:!!sharedNarration,candidateScore:Math.round(clamp(62+providerBonus+motion+Math.min(12,overlap*2),0,100))};
 }
 
 async function makeSceneCandidates(scene,dir,fallbackQuery,mediaPool,videoPool,count=1){
@@ -333,11 +352,9 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   const overlayFile=path.join(sceneDir,'overlay.txt');
   fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
-  const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.72-text_h/2`;
-  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',draw,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-t',String(duration),out]);
-  const srt=path.join(sceneDir,'captions.srt');
-  const ts=(sec)=>{const ms=Math.max(0,Math.round(sec*1000));const h=String(Math.floor(ms/3600000)).padStart(2,'0'),m=String(Math.floor(ms%3600000/60000)).padStart(2,'0'),ss=String(Math.floor(ms%60000/1000)).padStart(2,'0'),mmm=String(ms%1000).padStart(3,'0');return `${h}:${m}:${ss},${mmm}`;};
-  fs.writeFileSync(srt,`1\n${ts(0)} --> ${ts(duration)}\n${scene.narration}\n`);
+  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration);
+  const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.64-text_h/2`;
+  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-t',String(duration),out]);
   const assets=downloaded.map(({local,...a})=>({...a,file:path.basename(local)}));
   if(motionVideo){const {local,...v}=motionVideo;assets.unshift({...v,file:'remote-stream'});}
   return {...scene,duration:Number(duration.toFixed(2)),assets,file:out,captions:srt,hasRealVideo:!!motionVideo,visualType:motionVideo?'archive-video':'archive-motion',narrationReused:!!sharedNarration};
