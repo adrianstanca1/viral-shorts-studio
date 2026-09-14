@@ -15,6 +15,7 @@ import { recoverProjectState, prepareProjectRetry, inferFailureStage, failureIsR
 import { sourceQuality, rankSources, rankFacts, selectNarrativeFacts, narrativeArcAnalysis, repairNarrativeArc, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
 import { authConfigured, assertLaunchSecurity, ownerSessionToken, safeEqual } from './security.mjs';
 import { ensurePublishApproval, decidePublishApproval, invalidatePublishApproval } from './publish-approval.mjs';
+import { textRoutingPlan } from './text-router.mjs';
 
 
 assert.equal(inferFailureStage({progress:65,error:'No Commons images found for scene 5'}),'generating-scenes');assert.equal(inferFailureStage({progress:90,error:'ffmpeg exited 1 while assembling'}),'assembling');assert.equal(failureIsRecent({failedAt:'2026-01-01T11:00:00.000Z'},2,{now:()=>Date.parse('2026-01-01T12:00:00.000Z')}),true);assert.equal(failureIsRecent({failedAt:'2026-01-01T08:00:00.000Z'},2,{now:()=>Date.parse('2026-01-01T12:00:00.000Z')}),false);
@@ -38,6 +39,7 @@ assert.equal(sceneAcceptance(80,'hook').accepted,true);assert.equal(sceneAccepta
 assert.equal(canQueueFreeProvider({verifiedFree:true,executable:true,connectorOnly:false,remaining:1}),true);assert.equal(canQueueFreeProvider({verifiedFree:true,executable:false,connectorOnly:true,remaining:1}),false);assert.equal(canQueueFreeProvider({verifiedFree:true,executable:true,connectorOnly:false,remaining:0}),false);
 assert.ok(Array.isArray(preferredOpenRouterFreeModels(3)));
 const catalog=textModelCatalog();assert.ok(catalog.ollama.length>=3);assert.ok(catalog.huggingface.length>=4);assert.equal(pickCloudModel('ollama',{task:'storyboard',quality:'strong'}),'gpt-oss:120b-cloud');assert.equal(pickCloudModel('huggingface',{task:'storyboard',quality:'balanced'}),'openai/gpt-oss-20b');
+const routing=textRoutingPlan({task:'fact-check',quality:'strong'});assert.ok(['quality-first-free-cloud','local-first'].includes(routing.mode));assert.ok(Array.isArray(routing.order));assert.equal(new Set(routing.order).size,routing.order.length);
 assert.equal(isPublicHttps('https://example.com/a.mp4'),true);
 for(const u of ['http://example.com/a','https://127.0.0.1/a','https://169.254.169.254/a','https://10.0.0.1/a','https://[::1]/a','https://localhost/a'])assert.equal(isPublicHttps(u),false,u);
 const job=createProviderJob(root,{provider:'higgsfield',projectId:'p1',sceneIndex:1,kind:'video',verifiedFree:true,prompt:'test',priority:90});
