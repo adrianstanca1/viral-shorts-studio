@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { providerEvidence } from './provider-verifier.mjs';
+import { providerEvidence, evidenceFresh } from './provider-verifier.mjs';
 
 const truthy=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 const safeName=s=>String(s||'asset').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120);
 
 function providerConfig(id){
-  if(id==='huggingface')return {enabled:truthy(process.env.HF_GENERATION_ENABLED),verifiedFree:truthy(process.env.HF_GENERATION_VERIFIED_FREE),token:process.env.HF_TOKEN||'',kind:'image',model:process.env.HF_IMAGE_MODEL||'black-forest-labs/FLUX.1-schnell'};
-  if(id==='nvidia')return {enabled:truthy(process.env.NVIDIA_GENERATION_ENABLED),verifiedFree:truthy(process.env.NVIDIA_GENERATION_VERIFIED_FREE),token:process.env.NVIDIA_API_KEY||'',kind:'image',model:process.env.NVIDIA_IMAGE_MODEL||'',endpoint:process.env.NVIDIA_IMAGE_ENDPOINT||''};
+  const auto=truthy(process.env.AUTO_ENABLE_VERIFIED_FREE);
+  if(id==='huggingface')return {enabled:auto||truthy(process.env.HF_GENERATION_ENABLED),verifiedFree:truthy(process.env.HF_GENERATION_VERIFIED_FREE),token:process.env.HF_TOKEN||'',kind:'image',model:process.env.HF_IMAGE_MODEL||'black-forest-labs/FLUX.1-schnell'};
+  if(id==='nvidia')return {enabled:auto||truthy(process.env.NVIDIA_GENERATION_ENABLED),verifiedFree:truthy(process.env.NVIDIA_GENERATION_VERIFIED_FREE),token:process.env.NVIDIA_API_KEY||'',kind:'image',model:process.env.NVIDIA_IMAGE_MODEL||'',endpoint:process.env.NVIDIA_IMAGE_ENDPOINT||''};
   return {enabled:false,verifiedFree:false,kind:null};
 }
 
@@ -15,8 +16,8 @@ export function providerWorkerInventory(root=process.env.DATA_DIR||'/app/data'){
   return ['huggingface','nvidia','higgsfield','fal','external'].map(id=>{
     const c=providerConfig(id),e=providerEvidence(root,id);
     const connectorOnly=id==='higgsfield';
-    const verifiedFree=!!(c.verifiedFree||e?.zeroCostVerified);
-    const enabled=!!(c.enabled||e?.active);
+    const verifiedFree=!!(e?.zeroCostVerified&&evidenceFresh(e)&&Number(e?.remaining||0)>0);
+    const enabled=!!c.enabled;
     return {id,enabled,verifiedFree,authenticated:e?.authenticated??null,remaining:Number(e?.remaining||0),executable:!!(enabled&&verifiedFree&&c.token&&(id!=='nvidia'||c.endpoint)),connectorOnly,verificationSource:e?.source||null};
   });
 }
@@ -44,7 +45,7 @@ async function nvidia(job,outDir,c){
 
 export async function executeProviderJob(job,outDir){
   const c=providerConfig(job.provider),e=providerEvidence(process.env.DATA_DIR||'/app/data',job.provider);
-  const enabled=!!(c.enabled||e?.active),verifiedFree=!!(c.verifiedFree||e?.zeroCostVerified);
+  const enabled=!!c.enabled,verifiedFree=!!(e?.zeroCostVerified&&evidenceFresh(e)&&Number(e?.remaining||0)>0);
   if(!enabled||!verifiedFree)throw Object.assign(new Error('provider is not verified-free/enabled'),{retryable:false});
   if(!c.token)throw Object.assign(new Error('provider credential unavailable'),{retryable:false});
   fs.mkdirSync(outDir,{recursive:true});

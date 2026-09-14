@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { claimProviderJobs, releaseProviderJob, failProviderJob } from './provider-job-router.mjs';
 import { executeProviderJob, providerWorkerInventory } from './provider-adapters.mjs';
+import { consumeFreeAllowance } from './provider-verifier.mjs';
 
 const DATA=process.env.DATA_DIR||'/app/data';
 const API=process.env.STUDIO_INTERNAL_URL||'http://viral-shorts:3010';
@@ -21,7 +22,7 @@ async function runOne(provider){
   if(!job)return false;
   try{
     const result=await executeProviderJob(job,path.join(DATA,'provider-assets',provider));
-    await resolveLocal(job,result); heartbeat({lastJob:{id:job.id,provider,status:'completed'}});
+    await resolveLocal(job,result);const allowance=consumeFreeAllowance(DATA,provider,1); heartbeat({lastJob:{id:job.id,provider,status:'completed',remaining:allowance.remaining}});
   }catch(error){
     const msg=String(error?.message||error).slice(0,500);
     if(error?.retryable===false)failProviderJob(DATA,job.id,msg); else releaseProviderJob(DATA,job.id,msg);

@@ -10,6 +10,7 @@ import { buildAiGenerationPlan, summarizeAiPlan } from './ai-generation-manager.
 import { registerAiCandidate, registerLocalAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, claimProviderJobs, releaseProviderJob, reconcileProviderJobs } from './provider-job-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
+import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
 
 const app = express();
@@ -20,6 +21,7 @@ const DATA = process.env.DATA_DIR || '/app/data';
 const niches = ['true-crime','history','storytelling','fact-check'];
 const styles = ['documentary','cinematic','hybrid','whiteboard'];
 const jobs = new Map();
+const enabledFlag=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 let active=false;
 function kick(){
   if(active)return;
@@ -30,12 +32,23 @@ function kick(){
 
 function projectDir(id){ return path.join(DATA,'projects',id); }
 function projectFile(id){ return path.join(projectDir(id),'project.json'); }
-function save(job){ fs.mkdirSync(projectDir(job.id),{recursive:true}); fs.writeFileSync(projectFile(job.id),JSON.stringify(job,null,2)); jobs.set(job.id,job); }
+function save(job){ fs.mkdirSync(projectDir(job.id),{recursive:true}); fs.writeFileSync(projectFile(job.id),JSON.stringify(job,null,2)); jobs.set(job.id,job); if(job.status==='complete'&&enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))setImmediate(()=>maybeAutoCloudPlan(job.id)); }
 function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id); if(!fs.existsSync(p)) return null; const j=JSON.parse(fs.readFileSync(p,'utf8')); jobs.set(id,j); return j; }
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
 
+async function maybeAutoCloudPlan(id){
+  const j=load(id);if(!j||j.status!=='complete'||!j.render?.file||!fs.existsSync(j.render.file))return;
+  const stamp=String(Math.round(fs.statSync(j.render.file).mtimeMs));if(j.aiAutoPlanRenderStamp===stamp)return;
+  const chosen=chooseFreeProvider(DATA,'auto');
+  if(!chosen)return;
+  j.aiAutoPlanRenderStamp=stamp;
+  const plan=buildAiGenerationPlan(j,{provider:chosen.id,providerKind:chosen.kind,allowance:Math.min(Number(chosen.remaining||0),4),maxScenes:4,minScore:82});
+  const created=[];for(const item of plan.selected){created.push(createProviderJob(DATA,{provider:chosen.id,projectId:j.id,sceneIndex:item.index,kind:chosen.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true,priority:item.priority}))}
+  j.aiGenerationPlan={...plan,auto:true,route:{kind:chosen.kind,connectorOnly:!!chosen.connectorOnly,executable:!!chosen.executable}};j.aiFreeAllowance=plan.allowance;j.aiAutoJobs=created.map(x=>x.id);fs.writeFileSync(projectFile(j.id),JSON.stringify(j,null,2));jobs.set(j.id,j);
+}
+
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
-app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA),workerProviders:providerWorkerInventory()}));
+app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA),workerProviders:providerWorkerInventory(DATA),freeProviderRouting:freeProviderSummary(DATA)}));
 app.get('/api/stats',(req,res)=>{
   const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
@@ -62,17 +75,22 @@ app.post('/api/provider-jobs/claim',(req,res)=>{try{res.json({jobs:claimProvider
 app.post('/api/provider-jobs/:id/release',(req,res)=>{try{res.json(releaseProviderJob(DATA,req.params.id,req.body?.error))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.post('/api/provider-jobs',(req,res)=>{try{const body=req.body||{};if(!load(String(body.projectId||'')))return res.status(404).json({error:'project not found'});res.status(201).json(createProviderJob(DATA,body))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 
+function freePlanOptions(input={},project={}){
+  const requested=String(input.provider||'auto').toLowerCase(),chosen=chooseFreeProvider(DATA,requested);
+  const allowance=input.allowance!==undefined?Math.max(0,Number(input.allowance||0)):Number(chosen?.remaining||project.aiFreeAllowance||0);
+  return {provider:chosen?.id||'none',allowance:chosen?Math.min(allowance,Number(chosen.remaining||0)):0,maxScenes:Number(input.maxScenes||4),minScore:Number(input.minScore||82),providerKind:chosen?.kind||null,connectorOnly:!!chosen?.connectorOnly,executable:!!chosen?.executable};
+}
 app.get('/api/projects/:id/ai-generation-plan',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
-  const plan=buildAiGenerationPlan(j,{provider:req.query.provider||'higgsfield',allowance:Number(req.query.allowance||j.aiFreeAllowance||0),maxScenes:Number(req.query.maxScenes||4),minScore:Number(req.query.minScore||82)});
-  res.json(plan);
+  const opt=freePlanOptions(req.query,j),plan=buildAiGenerationPlan(j,opt);res.json({...plan,route:{kind:opt.providerKind,connectorOnly:opt.connectorOnly,executable:opt.executable}});
 });
 app.post('/api/projects/:id/ai-generation-plan',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
   if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project must finish before cloud scene planning'});
-  const body=req.body||{},plan=buildAiGenerationPlan(j,body);j.aiGenerationPlan=plan;j.aiFreeAllowance=plan.allowance;save(j);
-  const jobsCreated=[];if(body.createJobs===true){for(const item of plan.selected){jobsCreated.push(createProviderJob(DATA,{provider:plan.provider,projectId:j.id,sceneIndex:item.index,kind:item.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true,priority:item.priority}))}}
-  res.status(201).json({plan,summary:summarizeAiPlan(plan),jobs:jobsCreated});
+  const body=req.body||{},opt=freePlanOptions(body,j),plan=buildAiGenerationPlan(j,opt);j.aiGenerationPlan=plan;j.aiFreeAllowance=plan.allowance;save(j);
+  if(body.createJobs===true&&plan.provider==='none')return res.status(409).json({error:'No verified-free provider allowance is currently available',plan});
+  const jobsCreated=[];if(body.createJobs===true){for(const item of plan.selected){jobsCreated.push(createProviderJob(DATA,{provider:plan.provider,projectId:j.id,sceneIndex:item.index,kind:opt.providerKind||item.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true,priority:item.priority}))}}
+  res.status(201).json({plan:{...plan,route:{kind:opt.providerKind,connectorOnly:opt.connectorOnly,executable:opt.executable}},summary:summarizeAiPlan(plan),jobs:jobsCreated});
 });
 
 app.get('/api/projects/:id/ai-candidates',(req,res)=>{
@@ -202,5 +220,6 @@ app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if
 
 for(const job of list()){if(!['complete','failed','queued'].includes(job.status)){job.status='failed';job.error='Interrupted by restart; retry resumes completed scenes';save(job);}}
 reconcileProviderJobs(DATA);verifyProviders(DATA).catch(()=>{});setInterval(()=>reconcileProviderJobs(DATA),30000).unref();setInterval(()=>verifyProviders(DATA).catch(()=>{}),15*60*1000).unref();
-setImmediate(kick);
+setInterval(()=>{if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});},60000).unref();
+setImmediate(()=>{kick();if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});});
 app.listen(PORT,'0.0.0.0',()=>console.log(`Viral Shorts Studio listening on ${PORT}`));

@@ -25,6 +25,8 @@ services:
       TEXT_PROVIDER_ORDER: ${TEXT_PROVIDER_ORDER:-ollama,openrouter,nvidia}
       NVIDIA_ENABLED: ${NVIDIA_ENABLED:-false}
       NVIDIA_MODEL: ${NVIDIA_MODEL:-nvidia/llama-3.1-nemotron-70b-instruct}
+      AUTO_ENABLE_VERIFIED_FREE: ${AUTO_ENABLE_VERIFIED_FREE:-true}
+      AUTO_CLOUD_ENHANCE: ${AUTO_CLOUD_ENHANCE:-true}
       WHITEBOARD_PYTHON: /opt/whiteboard/bin/python
       WHITEBOARD_ADAPTER: /app/python/whiteboard_scene.py
       PROVIDER_REGISTRY_FILE: /app/provider-registry.json
@@ -58,6 +60,7 @@ services:
         required: false
     environment:
       DATA_DIR: /app/data
+      AUTO_ENABLE_VERIFIED_FREE: ${AUTO_ENABLE_VERIFIED_FREE:-true}
       STUDIO_INTERNAL_URL: http://viral-shorts:3010
       PROVIDER_WORKER_TOKEN: ${PROVIDER_WORKER_TOKEN:-}
       HF_GENERATION_ENABLED: ${HF_GENERATION_ENABLED:-false}

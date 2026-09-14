@@ -5,9 +5,10 @@ import path from 'node:path';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus } from './provider-job-router.mjs';
 import { buildAiGenerationPlan } from './ai-generation-manager.mjs';
 import { isPublicHttps } from './url-safety.mjs';
-import { recordFreeEvidence, providerEvidence } from './provider-verifier.mjs';
+import { recordFreeEvidence, providerEvidence, consumeFreeAllowance, evidenceFresh } from './provider-verifier.mjs';
 import { registerLocalAiCandidate } from './ai-candidate-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
+import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
 assert.equal(isPublicHttps('https://example.com/a.mp4'),true);
@@ -31,10 +32,12 @@ reconcileProviderJobs(root);assert.equal(getProviderJob(root,exp.id).status,'exp
 const assetDir=path.join(root,'provider-assets','huggingface');fs.mkdirSync(assetDir,{recursive:true});const asset=path.join(assetDir,'x.jpg');fs.writeFileSync(asset,'x');
 const local=registerLocalAiCandidate(root,'p-local',1,{provider:'huggingface',kind:'image',localFile:asset,verifiedFree:true,jobId:'local1'});assert.equal(local.localFile,asset);
 assert.throws(()=>registerLocalAiCandidate(root,'p-local',2,{provider:'huggingface',kind:'image',localFile:'/tmp/nope.jpg',verifiedFree:true}));
-const inv=providerWorkerInventory();assert.equal(inv.find(x=>x.id==='higgsfield').connectorOnly,true);
-const ev=recordFreeEvidence(root,{provider:'higgsfield',remaining:1,zeroCost:true,source:'test',evidence:'free allowance'});assert.equal(ev.zeroCostVerified,true);assert.equal(providerEvidence(root,'higgsfield').remaining,1);
+const inv=providerWorkerInventory(root);assert.equal(inv.find(x=>x.id==='higgsfield').connectorOnly,true);
+const ev=recordFreeEvidence(root,{provider:'higgsfield',remaining:2,zeroCost:true,source:'test',evidence:'free allowance',ttlSeconds:300});assert.equal(ev.zeroCostVerified,true);assert.equal(evidenceFresh(ev),true);
+assert.equal(chooseFreeProvider(root,'auto').id,'higgsfield');assert.equal(freeProviderSummary(root).selected,'higgsfield');
+const after=consumeFreeAllowance(root,'higgsfield',1);assert.equal(after.remaining,1);assert.equal(providerEvidence(root,'higgsfield').remaining,1);
 const project={storyboard:[{index:1,beat:'hook',durationHint:4},{index:2,beat:'context',durationHint:4},{index:3,beat:'payoff',durationHint:4}],scenes:[{index:1,candidateScore:60},{index:2,candidateScore:90},{index:3,candidateScore:70}]};
-const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,provider:'higgsfield'});
+const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,provider:'higgsfield',providerKind:'video'});
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);
 assert.equal(plan.freeOnly,true);assert.equal(plan.paidFallback,false);
 const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);

@@ -4,7 +4,8 @@ import path from 'node:path';
 const truthy=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 const now=()=>new Date().toISOString();
 const stateFile=root=>path.join(root,'provider-verification.json');
-const empty=()=>({version:1,updatedAt:now(),providers:{}});
+const empty=()=>({version:2,updatedAt:now(),providers:{}});
+export const evidenceFresh=p=>!p?.validUntil||Date.parse(p.validUntil)>Date.now();
 
 export function readVerification(root){
   try{return JSON.parse(fs.readFileSync(stateFile(root),'utf8'))}catch{return empty()}
@@ -29,17 +30,26 @@ export async function verifyProviders(root){
   const previous=readVerification(root),providers={...(previous.providers||{})};
   for(const result of await Promise.all([checkHf(),checkNvidia()])){
     const prior=providers[result.id]||{};
-    providers[result.id]={...prior,...result,zeroCostVerified:prior.zeroCostVerified===true&&Number(prior.remaining||0)>0,active:false};
+    const fresh=evidenceFresh(prior);
+    providers[result.id]={...prior,...result,zeroCostVerified:fresh&&prior.zeroCostVerified===true&&Number(prior.remaining||0)>0,active:false};
+    if(!fresh&&prior.zeroCostVerified){providers[result.id].remaining=0;providers[result.id].reason='free-generation evidence expired';}
   }
   for(const id of ['huggingface','nvidia']){
     const p=providers[id];p.active=!!(p.authenticated&&p.zeroCostVerified&&Number(p.remaining||0)>0&&truthy(process.env[`${id==='huggingface'?'HF':'NVIDIA'}_GENERATION_ENABLED`]));
   }
-  return writeVerification(root,{version:1,providers});
+  for(const [id,p] of Object.entries(providers)){if(p.zeroCostVerified&&!p.validUntil){const base=Date.parse(p.checkedAt)||Date.now();p.validUntil=new Date(base+21600*1000).toISOString();}if(!evidenceFresh(p)&&p.zeroCostVerified){p.zeroCostVerified=false;p.remaining=0;p.active=false;p.reason='free-generation evidence expired';}}
+  return writeVerification(root,{version:2,providers});
 }
 export function recordFreeEvidence(root,input={}){
   const id=String(input.provider||'').toLowerCase();if(!['higgsfield','huggingface','nvidia','fal','external'].includes(id))throw new Error('unsupported provider');
-  const remaining=Math.max(0,Number(input.remaining||0)),zeroCost=input.zeroCost===true;
+  const remaining=Math.max(0,Number(input.remaining||0)),zeroCost=input.zeroCost===true,ttlSeconds=Math.max(60,Math.min(604800,Number(input.ttlSeconds||21600)));
+  const validUntil=new Date(Date.now()+ttlSeconds*1000).toISOString();
   const state=readVerification(root),prior=state.providers[id]||base(id);
-  state.providers[id]={...prior,id,checkedAt:now(),source:String(input.source||'trusted-evidence').slice(0,120),evidence:String(input.evidence||'').slice(0,500),remaining,zeroCostVerified:zeroCost&&remaining>0,active:false};
+  state.providers[id]={...prior,id,checkedAt:now(),validUntil,source:String(input.source||'trusted-evidence').slice(0,120),evidence:String(input.evidence||'').slice(0,500),remaining,zeroCostVerified:zeroCost&&remaining>0,active:false};
   return writeVerification(root,state).providers[id];
+}
+
+export function consumeFreeAllowance(root,id,count=1){
+  const state=readVerification(root),p=state.providers?.[id];if(!p||!p.zeroCostVerified)throw new Error('provider has no verified free allowance');
+  const n=Math.max(1,Number(count||1));p.remaining=Math.max(0,Number(p.remaining||0)-n);p.zeroCostVerified=p.remaining>0&&evidenceFresh(p);p.active=!!(p.active&&p.zeroCostVerified);p.lastConsumedAt=now();return writeVerification(root,state).providers[id];
 }

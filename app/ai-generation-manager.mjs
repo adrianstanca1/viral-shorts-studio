@@ -21,7 +21,7 @@ export function buildAiGenerationPlan(project,options={}){
   const allowance=Math.max(0,Number(options.allowance??project.aiFreeAllowance??0));
   const maxScenes=clamp(Number(options.maxScenes||4),1,8);
   const minScore=clamp(Number(options.minScore||82),50,100);
-  const provider=String(options.provider||'higgsfield');
+  const provider=String(options.provider||'none'),providerKind=['image','video'].includes(String(options.providerKind||''))?String(options.providerKind):'video';
   const ranked=(project.storyboard||[]).map(scene=>({
     index:scene.index,beat:scene.beat,priority:scenePriority(project,scene),
     currentScore:currentBest(project,scene.index),hasAi:hasAi(project,scene.index),
@@ -31,7 +31,7 @@ export function buildAiGenerationPlan(project,options={}){
   for(const s of ranked){
     if(remaining<=0)break;
     if(s.hasAi||s.currentScore>=minScore)continue;
-    selected.push({...s,provider,kind:'video',reason:`${s.beat||'scene'} priority; current best ${s.currentScore||'unscored'}`});remaining--;
+    selected.push({...s,provider,kind:providerKind,reason:`${s.beat||'scene'} priority; current best ${s.currentScore||'unscored'}`});remaining--;
   }
   return {freeOnly:true,paidFallback:false,provider,allowance,maxScenes,minScore,selected,skipped:ranked.filter(x=>!selected.some(s=>s.index===x.index)),createdAt:new Date().toISOString()};
 }

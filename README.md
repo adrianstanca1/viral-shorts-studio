@@ -69,3 +69,7 @@ The Docker stack includes an isolated `provider-worker` service that claims only
 
 ### Zero-cost provider verification
 The studio maintains `/app/data/provider-verification.json` as a runtime evidence ledger. Authentication checks for Hugging Face and NVIDIA run on startup and every 15 minutes, but authentication alone never enables generation. A provider is promoted only when there is explicit zero-cost evidence with remaining allowance. Higgsfield connector allowances can be recorded through the protected evidence endpoint; connector-only providers remain non-executable on the VPS. `GET /api/provider-verification` exposes the current evidence and worker eligibility without revealing credentials.
+
+### Automatic verified-free routing
+
+The studio now chooses cloud providers from the live zero-cost verification ledger instead of a hard-coded provider. Active pending/leased jobs reserve free allowance so the system cannot oversubscribe a one-generation grant. Evidence expires automatically, direct adapters only activate while current zero-cost evidence remains valid, and successful direct jobs decrement the tracked allowance. Completed projects are revisited periodically so newly available verified-free capacity can enhance eligible scenes automatically without paid fallback.
