@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus, deleteProviderJobsForProject } from './provider-job-router.mjs';
+import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus, providerJobsSnapshot, deleteProviderJobsForProject } from './provider-job-router.mjs';
 import { buildAiGenerationPlan } from './ai-generation-manager.mjs';
 import { isPublicHttps } from './url-safety.mjs';
 import { recordFreeEvidence, providerEvidence, consumeFreeAllowance, evidenceFresh } from './provider-verifier.mjs';
@@ -63,7 +63,7 @@ const project={storyboard:[{index:1,beat:'hook',durationHint:4},{index:2,beat:'c
 const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,provider:'higgsfield',providerKind:'video'});
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);
 assert.equal(plan.freeOnly,true);assert.equal(plan.paidFallback,false);
-const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);
+const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);const snap=providerJobsSnapshot(root);assert.equal(snap.total,3);assert.equal(snap.jobs.length,3);assert.equal(snap.counts.ready,1);assert.equal(snap.counts.failed,1);assert.equal(snap.counts.expired,1);
 const cleanupJob=createProviderJob(root,{provider:'higgsfield',projectId:'cleanup-project',sceneIndex:4,kind:'video',verifiedFree:true});assert.ok(getProviderJob(root,cleanupJob.id));assert.equal(deleteProviderJobsForProject(root,'cleanup-project'),1);assert.equal(getProviderJob(root,cleanupJob.id),null);
 const inbox=aiInboxDir(root,'cleanup-project');fs.mkdirSync(inbox,{recursive:true});fs.writeFileSync(path.join(inbox,'x.json'),'{}');assert.equal(deleteAiCandidatesForProject(root,'cleanup-project'),true);assert.equal(fs.existsSync(inbox),false);
 

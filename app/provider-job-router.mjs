@@ -9,7 +9,7 @@ const nowIso=()=>new Date().toISOString();
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 function dir(root){const d=path.join(root,'provider-jobs');fs.mkdirSync(d,{recursive:true});return d}
 function file(root,id){return path.join(dir(root),`${id}.json`)}
-function write(root,record){record.updatedAt=nowIso();fs.writeFileSync(file(root,record.id),JSON.stringify(record,null,2));return record}
+function write(root,record){record.updatedAt=nowIso();const target=file(root,record.id),tmp=`${target}.${process.pid}.tmp`;fs.writeFileSync(tmp,JSON.stringify(record,null,2));fs.renameSync(tmp,target);return record}
 function readAll(root){return fs.readdirSync(dir(root)).filter(x=>x.endsWith('.json')).flatMap(x=>{try{return [JSON.parse(fs.readFileSync(path.join(dir(root),x),'utf8'))]}catch{return []}})}
 export function createProviderJob(root,input={}){
   const provider=String(input.provider||'external').toLowerCase();
@@ -26,9 +26,9 @@ export function createProviderJob(root,input={}){
 }
 export function getProviderJob(root,id){try{return JSON.parse(fs.readFileSync(file(root,id),'utf8'))}catch{return null}}
 export function claimProviderJobs(root,input={}){
-  reconcileProviderJobs(root);
+  const all=readAll(root);reconcileItems(root,all);
   const provider=String(input.provider||'').toLowerCase(),limit=clamp(Number(input.limit||1),1,8),leaseSeconds=clamp(Number(input.leaseSeconds||120),30,900),workerId=String(input.workerId||'worker').slice(0,80);
-  const jobs=readAll(root).filter(x=>x.status==='pending'&&(!provider||x.provider===provider)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(a.createdAt).localeCompare(String(b.createdAt))).slice(0,limit);
+  const jobs=all.filter(x=>x.status==='pending'&&(!provider||x.provider===provider)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(a.createdAt).localeCompare(String(b.createdAt))).slice(0,limit);
   return jobs.map(record=>{record.status='leased';record.workerId=workerId;record.attempts=Number(record.attempts||0)+1;record.leaseUntil=new Date(Date.now()+leaseSeconds*1000).toISOString();return write(root,record)});
 }
 export function releaseProviderJob(root,id,error=''){
@@ -47,9 +47,9 @@ export function failProviderJob(root,id,error='provider generation failed'){
   const record=getProviderJob(root,id);if(!record)throw new Error('provider job not found');
   record.status='failed';record.error=String(error).slice(0,500);delete record.workerId;delete record.leaseUntil;return write(root,record);
 }
-export function reconcileProviderJobs(root){
+function reconcileItems(root,items){
   const now=Date.now(),changed=[];
-  for(const record of readAll(root)){
+  for(const record of items){
     let migrated=false;if(record.priority===undefined){record.priority=0;migrated=true;}if(record.attempts===undefined){record.attempts=0;migrated=true;}if(!record.expiresAt&&!finalStates.has(record.status)){const base=Date.parse(record.createdAt)||now;record.expiresAt=new Date(base+6*60*60*1000).toISOString();migrated=true;}if(migrated)write(root,record);
     if(finalStates.has(record.status))continue;
     if(record.expiresAt&&Date.parse(record.expiresAt)<=now){record.status='expired';record.error='provider job expired before completion';delete record.workerId;delete record.leaseUntil;write(root,record);changed.push(record);continue;}
@@ -57,15 +57,14 @@ export function reconcileProviderJobs(root){
   }
   return changed;
 }
-export function listProviderJobs(root,filter={}){
-  reconcileProviderJobs(root);
-  return readAll(root).filter(x=>(!filter.status||x.status===filter.status)&&(!filter.provider||x.provider===filter.provider)&&(!filter.projectId||x.projectId===filter.projectId)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(b.createdAt).localeCompare(String(a.createdAt)));
+export function reconcileProviderJobs(root){return reconcileItems(root,readAll(root));}
+export function providerJobsSnapshot(root,filter={}){
+  const all=readAll(root);reconcileItems(root,all);const counts={pending:0,leased:0,ready:0,failed:0,expired:0};for(const x of all)counts[x.status]=(counts[x.status]||0)+1;
+  const jobs=all.filter(x=>(!filter.status||x.status===filter.status)&&(!filter.provider||x.provider===filter.provider)&&(!filter.projectId||x.projectId===filter.projectId)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(b.createdAt).localeCompare(String(a.createdAt)));
+  return {counts,total:all.length,providers:[...new Set(all.map(x=>x.provider))],jobs};
 }
-export function providerJobStatus(root){
-  reconcileProviderJobs(root);
-  const items=readAll(root),counts={pending:0,leased:0,ready:0,failed:0,expired:0};for(const x of items)counts[x.status]=(counts[x.status]||0)+1;
-  return {counts,total:items.length,providers:[...new Set(items.map(x=>x.provider))]};
-}
+export function listProviderJobs(root,filter={}){return providerJobsSnapshot(root,filter).jobs;}
+export function providerJobStatus(root){const {jobs,...status}=providerJobsSnapshot(root);return status;}
 
 export function deleteProviderJobsForProject(root,projectId){
   const id=String(projectId||'').trim();if(!id)return 0;let removed=0;

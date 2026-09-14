@@ -8,7 +8,7 @@ import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
 import { buildAiGenerationPlan, summarizeAiPlan } from './ai-generation-manager.mjs';
 import { registerAiCandidate, registerLocalAiCandidate, listAiCandidates, aiCandidateStatus, deleteAiCandidatesForProject } from './ai-candidate-router.mjs';
-import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, deleteProviderJobsForProject } from './provider-job-router.mjs';
+import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, providerJobsSnapshot, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, deleteProviderJobsForProject } from './provider-job-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
 import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openrouter-catalog.mjs';
 import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
@@ -50,8 +50,9 @@ function kick(){
 
 function projectDir(id){ return path.join(DATA,'projects',id); }
 function projectFile(id){ return path.join(projectDir(id),'project.json'); }
-function save(job){ if(job.status==='complete')ensurePublishApproval(job,{required:REQUIRE_PUBLISH_APPROVAL}); fs.mkdirSync(projectDir(job.id),{recursive:true}); fs.writeFileSync(projectFile(job.id),JSON.stringify(job,null,2)); jobs.set(job.id,job); if(job.status==='complete'&&enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))setImmediate(()=>maybeAutoCloudPlan(job.id)); }
-function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id); if(!fs.existsSync(p)) return null; const j=JSON.parse(fs.readFileSync(p,'utf8')); const hadApproval=!!j.publishApproval?.status;if(j.status==='complete')ensurePublishApproval(j,{required:REQUIRE_PUBLISH_APPROVAL});if(!hadApproval&&j.publishApproval?.status)fs.writeFileSync(p,JSON.stringify(j,null,2));jobs.set(id,j); return j; }
+function writeJsonAtomic(file,value){const tmp=`${file}.${process.pid}.tmp`;fs.writeFileSync(tmp,JSON.stringify(value,null,2));fs.renameSync(tmp,file);}
+function save(job){ if(job.status==='complete')ensurePublishApproval(job,{required:REQUIRE_PUBLISH_APPROVAL}); fs.mkdirSync(projectDir(job.id),{recursive:true}); writeJsonAtomic(projectFile(job.id),job); jobs.set(job.id,job); if(job.status==='complete'&&enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))setImmediate(()=>maybeAutoCloudPlan(job.id)); }
+function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id); if(!fs.existsSync(p)) return null; const j=JSON.parse(fs.readFileSync(p,'utf8')); const hadApproval=!!j.publishApproval?.status;if(j.status==='complete')ensurePublishApproval(j,{required:REQUIRE_PUBLISH_APPROVAL});if(!hadApproval&&j.publishApproval?.status)writeJsonAtomic(p,j);jobs.set(id,j); return j; }
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
 function projectSummary(j){ const variants=Object.values(j.sceneVariants||{}).reduce((n,v)=>n+(Array.isArray(v)?v.length:0),0); return {id:j.id,topic:j.topic,niche:j.niche,style:j.style||'documentary',duration:j.duration,status:j.status,progress:Number(j.progress||0),createdAt:j.createdAt,completedAt:j.completedAt||null,error:j.error?String(j.error).slice(0,240):null,failedStage:j.failedStage||null,retryCount:Number(j.retryCount||0),publishApproval:j.publishApproval?.status||null,sceneCount:j.scenes?.length||0,variantCount:variants,score:j.qa?.viralityScore??null,actualDuration:j.render?.actualDuration??null,hasVideo:!!j.render?.file}; }
 
@@ -63,40 +64,29 @@ async function maybeAutoCloudPlan(id){
   j.aiAutoPlanRenderStamp=stamp;
   const plan=buildAiGenerationPlan(j,{provider:chosen.id,providerKind:chosen.kind,allowance:Math.min(Number(chosen.remaining||0),4),maxScenes:4,minScore:82});
   const created=[];for(const item of plan.selected){created.push(createProviderJob(DATA,{provider:chosen.id,projectId:j.id,sceneIndex:item.index,kind:chosen.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true,priority:item.priority}))}
-  j.aiGenerationPlan={...plan,auto:true,route:{kind:chosen.kind,connectorOnly:!!chosen.connectorOnly,executable:!!chosen.executable}};j.aiFreeAllowance=plan.allowance;j.aiAutoJobs=created.map(x=>x.id);fs.writeFileSync(projectFile(j.id),JSON.stringify(j,null,2));jobs.set(j.id,j);
+  j.aiGenerationPlan={...plan,auto:true,route:{kind:chosen.kind,connectorOnly:!!chosen.connectorOnly,executable:!!chosen.executable}};j.aiFreeAllowance=plan.allowance;j.aiAutoJobs=created.map(x=>x.id);writeJsonAtomic(projectFile(j.id),j);jobs.set(j.id,j);
 }
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
 app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA),workerProviders:providerWorkerInventory(DATA),freeProviderRouting:freeProviderSummary(DATA)}));
-app.get('/api/diagnostics',async(req,res)=>{
-  try{
-    const st=fs.statfsSync(DATA),freeBytes=Number(st.bavail)*Number(st.bsize),totalBytes=Number(st.blocks)*Number(st.bsize),freePercent=totalBytes?Number((100*freeBytes/totalBytes).toFixed(1)):0;
-    const text=await textProviderStatus(),local=text.providers?.find(p=>p.id==='ollama-local');
-    const jobsState=providerJobStatus(DATA),pending=(jobsState.counts?.pending||0)+(jobsState.counts?.leased||0),providerFailures=(jobsState.counts?.failed||0)+(jobsState.counts?.expired||0);
-    const allProjects=list(),projectById=new Map(allProjects.map(x=>[x.id,x]));
-    const allProviderFailures=listProviderJobs(DATA).filter(x=>['failed','expired'].includes(x.status)),recentProviderFailures=allProviderFailures.filter(x=>failureIsRecent(x,2)&&projectById.has(x.projectId)&&projectById.get(x.projectId)?.status!=='complete').length;
-    const failedProjects=allProjects.filter(x=>x.status==='failed'),recentProjectFailures=failedProjects.filter(x=>failureIsRecent(x,2)).slice(0,5).map(x=>({id:x.id,topic:x.topic,stage:x.failedStage||inferFailureStage(x),error:String(x.error||'').slice(0,240),failedAt:x.failedAt||null,retryCount:Number(x.retryCount||0)}));
-    const workerFile=path.join(DATA,'provider-worker-status.json');let workerAgeSeconds=null;try{workerAgeSeconds=Math.max(0,Math.round((Date.now()-fs.statSync(workerFile).mtimeMs)/1000));}catch{}
-    const checks=[
-      {id:'storage',label:'Storage',ok:freePercent>=10,detail:`${(freeBytes/1073741824).toFixed(1)} GB free`},
-      {id:'local-ai',label:'Local AI',ok:local?.status==='available'&&local?.enabled!==false,detail:local?.status||'unavailable'},
-      {id:'queue',label:'Generation queue',ok:pending<25,detail:`${pending} pending/leased`},
-      {id:'worker',label:'Provider worker',ok:workerAgeSeconds===null||workerAgeSeconds<180,detail:workerAgeSeconds===null?'no heartbeat yet':`${workerAgeSeconds}s since heartbeat`},
-      {id:'cost-policy',label:'Cost policy',ok:true,detail:'free-only; paid fallback disabled'},
-      {id:'owner-auth',label:'Owner authentication',ok:authConfigured(AUTH_SECRET)||!PUBLIC_LAUNCH,detail:authConfigured(AUTH_SECRET)?'configured':PUBLIC_LAUNCH?'required but missing':'optional for local-only mode'},
-      {id:'public-launch',label:'Public launch guard',ok:!PUBLIC_LAUNCH||authConfigured(AUTH_SECRET),detail:PUBLIC_LAUNCH?'public mode enabled':'local-only mode'},
-      {id:'rate-limit',label:'Write rate limit',ok:true,detail:`${Number(process.env.WRITE_RATE_LIMIT||120)} requests / 5 min`}
-    ];
-    const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
-    res.json({status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending,recentProviderFailures,historicalProviderFailures:providerFailures},failureSummary:{recentProjects:recentProjectFailures.length,historicalProjects:failedProjects.length},recentProjectFailures,activeProject:active,shuttingDown,generatedAt:new Date().toISOString()});
-  }catch(e){res.status(500).json({status:'degraded',error:'diagnostics unavailable'});}
-});
-
-app.get('/api/stats',(req,res)=>{
-  const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
-  const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
-  res.json({projects:all.length,completed:completed.length,failed:failed.length,queued:all.filter(x=>x.status==='queued').length,pendingApproval:completed.filter(x=>x.publishApproval?.status==='pending').length,approved:completed.filter(x=>x.publishApproval?.status==='approved').length,successRate:all.length?Number((100*completed.length/all.length).toFixed(1)):0,averageProductionSeconds:avg(completed),researchCacheHits:completed.filter(x=>x.researchCacheHit).length,mediaCacheHits:completed.filter(x=>x.mediaCacheHit).length,averageViralityScore:completed.length?Number((completed.reduce((n,x)=>n+Number(x.qa?.viralityScore||0),0)/completed.length).toFixed(1)):0});
-});
+function statsSnapshot(all=list()){
+  const completed=all.filter(x=>x.status==='complete'),failed=all.filter(x=>x.status==='failed');
+  const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0),avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
+  return {projects:all.length,completed:completed.length,failed:failed.length,queued:all.filter(x=>x.status==='queued').length,pendingApproval:completed.filter(x=>x.publishApproval?.status==='pending').length,approved:completed.filter(x=>x.publishApproval?.status==='approved').length,successRate:all.length?Number((100*completed.length/all.length).toFixed(1)):0,averageProductionSeconds:avg(completed),researchCacheHits:completed.filter(x=>x.researchCacheHit).length,mediaCacheHits:completed.filter(x=>x.mediaCacheHit).length,averageViralityScore:completed.length?Number((completed.reduce((n,x)=>n+Number(x.qa?.viralityScore||0),0)/completed.length).toFixed(1)):0};
+}
+async function diagnosticsSnapshot(allProjects=list(),providerSnapshot=providerJobsSnapshot(DATA)){
+  const st=fs.statfsSync(DATA),freeBytes=Number(st.bavail)*Number(st.bsize),totalBytes=Number(st.blocks)*Number(st.bsize),freePercent=totalBytes?Number((100*freeBytes/totalBytes).toFixed(1)):0;
+  const text=await textProviderStatus(),local=text.providers?.find(p=>p.id==='ollama-local'),pending=(providerSnapshot.counts?.pending||0)+(providerSnapshot.counts?.leased||0),providerFailures=(providerSnapshot.counts?.failed||0)+(providerSnapshot.counts?.expired||0);
+  const projectById=new Map(allProjects.map(x=>[x.id,x])),allProviderFailures=providerSnapshot.jobs.filter(x=>['failed','expired'].includes(x.status)),recentProviderFailures=allProviderFailures.filter(x=>failureIsRecent(x,2)&&projectById.has(x.projectId)&&projectById.get(x.projectId)?.status!=='complete').length;
+  const failedProjects=allProjects.filter(x=>x.status==='failed'),recentProjectFailures=failedProjects.filter(x=>failureIsRecent(x,2)).slice(0,5).map(x=>({id:x.id,topic:x.topic,stage:x.failedStage||inferFailureStage(x),error:String(x.error||'').slice(0,240),failedAt:x.failedAt||null,retryCount:Number(x.retryCount||0)}));
+  const workerFile=path.join(DATA,'provider-worker-status.json');let workerAgeSeconds=null;try{workerAgeSeconds=Math.max(0,Math.round((Date.now()-fs.statSync(workerFile).mtimeMs)/1000));}catch{}
+  const checks=[{id:'storage',label:'Storage',ok:freePercent>=10,detail:`${(freeBytes/1073741824).toFixed(1)} GB free`},{id:'local-ai',label:'Local AI',ok:local?.status==='available'&&local?.enabled!==false,detail:local?.status||'unavailable'},{id:'queue',label:'Generation queue',ok:pending<25,detail:`${pending} pending/leased`},{id:'worker',label:'Provider worker',ok:workerAgeSeconds===null||workerAgeSeconds<180,detail:workerAgeSeconds===null?'no heartbeat yet':`${workerAgeSeconds}s since heartbeat`},{id:'cost-policy',label:'Cost policy',ok:true,detail:'free-only; paid fallback disabled'},{id:'owner-auth',label:'Owner authentication',ok:authConfigured(AUTH_SECRET)||!PUBLIC_LAUNCH,detail:authConfigured(AUTH_SECRET)?'configured':PUBLIC_LAUNCH?'required but missing':'optional for local-only mode'},{id:'public-launch',label:'Public launch guard',ok:!PUBLIC_LAUNCH||authConfigured(AUTH_SECRET),detail:PUBLIC_LAUNCH?'public mode enabled':'local-only mode'},{id:'rate-limit',label:'Write rate limit',ok:true,detail:`${Number(process.env.WRITE_RATE_LIMIT||120)} requests / 5 min`}];
+  const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
+  return {status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending,recentProviderFailures,historicalProviderFailures:providerFailures},failureSummary:{recentProjects:recentProjectFailures.length,historicalProjects:failedProjects.length},recentProjectFailures,activeProject:active,shuttingDown,generatedAt:new Date().toISOString()};
+}
+app.get('/api/diagnostics',async(req,res)=>{try{res.json(await diagnosticsSnapshot())}catch{res.status(500).json({status:'degraded',error:'diagnostics unavailable'})}});
+app.get('/api/stats',(req,res)=>res.json(statsSnapshot()));
+app.get('/api/dashboard',async(req,res)=>{try{const all=list(),providerSnapshot=providerJobsSnapshot(DATA),diagnostics=await diagnosticsSnapshot(all,providerSnapshot);res.json({health:{status:'ok',service:'viral-shorts-studio',mode:'autonomous-production'},projects:all.map(projectSummary),stats:statsSnapshot(all),providerJobs:{counts:providerSnapshot.counts,total:providerSnapshot.total,providers:providerSnapshot.providers,jobs:providerSnapshot.jobs.slice(0,100)},providerVerification:{state:readVerification(DATA),worker:providerWorkerInventory(DATA)},diagnostics})}catch{res.status(500).json({error:'dashboard unavailable'})}});
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
   stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','verified-free-ai-candidates','free-allowance-planning','provider-job-harvesting','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
