@@ -66,3 +66,9 @@ export function providerJobStatus(root){
   const items=readAll(root),counts={pending:0,leased:0,ready:0,failed:0,expired:0};for(const x of items)counts[x.status]=(counts[x.status]||0)+1;
   return {counts,total:items.length,providers:[...new Set(items.map(x=>x.provider))]};
 }
+
+export function deleteProviderJobsForProject(root,projectId){
+  const id=String(projectId||'').trim();if(!id)return 0;let removed=0;
+  for(const record of readAll(root)){if(record.projectId!==id)continue;try{fs.rmSync(file(root,record.id),{force:true});removed++;}catch{}}
+  return removed;
+}

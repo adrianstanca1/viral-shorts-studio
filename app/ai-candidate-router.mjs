@@ -43,3 +43,7 @@ export function registerLocalAiCandidate(root,projectId,sceneIndex,input={}){
   fs.writeFileSync(path.join(dir,`scene-${String(sceneIndex).padStart(2,'0')}-${id}.json`),JSON.stringify(record,null,2));
   return record;
 }
+
+export function deleteAiCandidatesForProject(root,projectId){
+  const id=String(projectId||'').trim();if(!id)return false;const target=aiInboxDir(root,id);if(!fs.existsSync(target))return false;fs.rmSync(target,{recursive:true,force:true});return true;
+}

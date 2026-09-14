@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus } from './provider-job-router.mjs';
+import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus, deleteProviderJobsForProject } from './provider-job-router.mjs';
 import { buildAiGenerationPlan } from './ai-generation-manager.mjs';
 import { isPublicHttps } from './url-safety.mjs';
 import { recordFreeEvidence, providerEvidence, consumeFreeAllowance, evidenceFresh } from './provider-verifier.mjs';
-import { registerLocalAiCandidate } from './ai-candidate-router.mjs';
+import { registerLocalAiCandidate, deleteAiCandidatesForProject, aiInboxDir } from './ai-candidate-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
 import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
@@ -58,6 +58,9 @@ const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,pr
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);
 assert.equal(plan.freeOnly,true);assert.equal(plan.paidFallback,false);
 const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);
+const cleanupJob=createProviderJob(root,{provider:'higgsfield',projectId:'cleanup-project',sceneIndex:4,kind:'video',verifiedFree:true});assert.ok(getProviderJob(root,cleanupJob.id));assert.equal(deleteProviderJobsForProject(root,'cleanup-project'),1);assert.equal(getProviderJob(root,cleanupJob.id),null);
+const inbox=aiInboxDir(root,'cleanup-project');fs.mkdirSync(inbox,{recursive:true});fs.writeFileSync(path.join(inbox,'x.json'),'{}');assert.equal(deleteAiCandidatesForProject(root,'cleanup-project'),true);assert.equal(fs.existsSync(inbox),false);
+
 const recoveryExists=new Set(['/ok/scene1.mp4','/ok/scene2.mp4','/ok/final.mp4','/ok/credits.json']);
 const intact={status:'complete',progress:100,storyboard:[{index:1},{index:2}],scenes:[{index:1,file:'/ok/scene1.mp4'},{index:2,file:'/ok/scene2.mp4'}],render:{file:'/ok/final.mp4',credits:'/ok/credits.json'}};
 assert.equal(recoverProjectState(structuredClone(intact),{exists:x=>recoveryExists.has(x)}).changed,false);
