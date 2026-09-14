@@ -63,3 +63,6 @@ Provider result ingestion now validates public HTTPS URLs, rejects local/private
 
 ### AI provider queue orchestration
 Provider jobs now support priority scheduling, worker leases, safe release/retry, TTL expiry, and stale-lease recovery. Workers can claim up to eight verified-free jobs through `POST /api/provider-jobs/claim`; completed results continue through the existing resolve endpoint and automatically re-enter scene competition. The browser metrics show the live AI queue and project-level free-cloud plan. Paid fallback remains disabled.
+
+### Autonomous provider worker
+The Docker stack includes an isolated `provider-worker` service that claims only providers explicitly marked both enabled and verified-free. Direct Hugging Face and NVIDIA image adapters are implemented but remain disabled until zero-cost generation is explicitly verified. Generated media is stored in the shared private volume, registered as a trusted local AI candidate, scored against archive/whiteboard candidates, and can trigger scene-only re-rendering. Higgsfield remains connector-only because the VPS does not have a verified no-charge direct API path.

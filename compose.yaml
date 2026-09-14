@@ -31,6 +31,7 @@ services:
       PEXELS_KEY: ${PEXELS_KEY:-}
       PIXABAY_KEY: ${PIXABAY_KEY:-}
       FAL_KEY: ${FAL_KEY:-}
+      PROVIDER_WORKER_TOKEN: ${PROVIDER_WORKER_TOKEN:-}
     depends_on:
       ollama:
         condition: service_healthy
@@ -46,6 +47,34 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+  provider-worker:
+    build: .
+    container_name: viral-shorts-provider-worker
+    restart: unless-stopped
+    init: true
+    command: ["node","app/provider-worker.mjs"]
+    env_file:
+      - path: ../secrets/providers.env
+        required: false
+    environment:
+      DATA_DIR: /app/data
+      STUDIO_INTERNAL_URL: http://viral-shorts:3010
+      PROVIDER_WORKER_TOKEN: ${PROVIDER_WORKER_TOKEN:-}
+      HF_GENERATION_ENABLED: ${HF_GENERATION_ENABLED:-false}
+      HF_GENERATION_VERIFIED_FREE: ${HF_GENERATION_VERIFIED_FREE:-false}
+      HF_IMAGE_MODEL: ${HF_IMAGE_MODEL:-black-forest-labs/FLUX.1-schnell}
+      NVIDIA_GENERATION_ENABLED: ${NVIDIA_GENERATION_ENABLED:-false}
+      NVIDIA_GENERATION_VERIFIED_FREE: ${NVIDIA_GENERATION_VERIFIED_FREE:-false}
+      NVIDIA_IMAGE_ENDPOINT: ${NVIDIA_IMAGE_ENDPOINT:-}
+      NVIDIA_IMAGE_MODEL: ${NVIDIA_IMAGE_MODEL:-}
+    depends_on:
+      viral-shorts:
+        condition: service_healthy
+    volumes:
+      - viral-shorts-data:/app/data
+    mem_limit: 1g
+    cpus: 1
+
   ollama:
     image: ollama/ollama:latest
     container_name: viral-shorts-ollama

@@ -5,6 +5,8 @@ import path from 'node:path';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus } from './provider-job-router.mjs';
 import { buildAiGenerationPlan } from './ai-generation-manager.mjs';
 import { isPublicHttps } from './url-safety.mjs';
+import { registerLocalAiCandidate } from './ai-candidate-router.mjs';
+import { providerWorkerInventory } from './provider-adapters.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
 assert.equal(isPublicHttps('https://example.com/a.mp4'),true);
@@ -25,6 +27,10 @@ assert.throws(()=>resolveProviderJob(root,failed.id,{url:'https://example.com/a.
 const exp=createProviderJob(root,{provider:'external',projectId:'p2',sceneIndex:1,kind:'image',verifiedFree:true,ttlSeconds:300});
 const ef=path.join(root,'provider-jobs',`${exp.id}.json`),er=JSON.parse(fs.readFileSync(ef,'utf8'));er.expiresAt=new Date(Date.now()-1000).toISOString();fs.writeFileSync(ef,JSON.stringify(er));
 reconcileProviderJobs(root);assert.equal(getProviderJob(root,exp.id).status,'expired');
+const assetDir=path.join(root,'provider-assets','huggingface');fs.mkdirSync(assetDir,{recursive:true});const asset=path.join(assetDir,'x.jpg');fs.writeFileSync(asset,'x');
+const local=registerLocalAiCandidate(root,'p-local',1,{provider:'huggingface',kind:'image',localFile:asset,verifiedFree:true,jobId:'local1'});assert.equal(local.localFile,asset);
+assert.throws(()=>registerLocalAiCandidate(root,'p-local',2,{provider:'huggingface',kind:'image',localFile:'/tmp/nope.jpg',verifiedFree:true}));
+const inv=providerWorkerInventory();assert.equal(inv.find(x=>x.id==='higgsfield').connectorOnly,true);
 const project={storyboard:[{index:1,beat:'hook',durationHint:4},{index:2,beat:'context',durationHint:4},{index:3,beat:'payoff',durationHint:4}],scenes:[{index:1,candidateScore:60},{index:2,candidateScore:90},{index:3,candidateScore:70}]};
 const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,provider:'higgsfield'});
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);

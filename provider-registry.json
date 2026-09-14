@@ -48,11 +48,14 @@
   },
   {
     "credentialVariable": "NVIDIA_API_KEY",
-    "authentication": "not-tested",
+    "authentication": "verified",
     "generationVerified": false,
     "enabled": false,
-    "policy": "disabled-pending-free-usage-and-compatibility-verification",
-    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+    "policy": "disabled-until-zero-cost-generation-is-explicitly-verified",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers",
+    "provider": "nvidia",
+    "httpStatus": 200,
+    "checkedAt": "2026-09-14T11:49:25.773763+00:00"
   },
   {
     "provider": "sendgrid",
@@ -136,12 +139,12 @@
   {
     "provider": "huggingface",
     "credentialVariable": "HF_TOKEN",
-    "checkedAt": "2026-09-14T07:34:45.659529+00:00",
+    "checkedAt": "2026-09-14T11:49:25.773763+00:00",
     "enabled": false,
     "generationVerified": false,
     "httpStatus": 200,
     "authentication": "verified",
-    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "policy": "disabled-until-zero-cost-generation-is-explicitly-verified",
     "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   }
 ]

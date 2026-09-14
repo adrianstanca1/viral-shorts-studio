@@ -7,8 +7,9 @@ import { produceProject, mediaProviderStatus } from './pipeline.mjs';
 import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
 import { buildAiGenerationPlan, summarizeAiPlan } from './ai-generation-manager.mjs';
-import { registerAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
+import { registerAiCandidate, registerLocalAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, claimProviderJobs, releaseProviderJob, reconcileProviderJobs } from './provider-job-router.mjs';
+import { providerWorkerInventory } from './provider-adapters.mjs';
 
 const app = express();
 app.use(express.json({limit:'2mb'}));
@@ -33,7 +34,7 @@ function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id)
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
-app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA)}));
+app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA),workerProviders:providerWorkerInventory()}));
 app.get('/api/stats',(req,res)=>{
   const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
@@ -49,6 +50,8 @@ app.get('/api/capabilities',(req,res)=>res.json({
   policy:['cite sources','preserve asset credits','approval before publishing','do not fabricate real-crime claims']
 }));
 
+
+app.get('/api/provider-worker/status',(req,res)=>{const f=path.join(DATA,'provider-worker-status.json');if(!fs.existsSync(f))return res.json({state:'offline'});try{res.json(JSON.parse(fs.readFileSync(f,'utf8')))}catch{res.json({state:'invalid'})}});
 app.get('/api/provider-jobs',(req,res)=>{const status=String(req.query.status||'').trim(),provider=String(req.query.provider||'').trim().toLowerCase(),projectId=String(req.query.projectId||'').trim();res.json({...providerJobStatus(DATA),jobs:listProviderJobs(DATA,{status,provider,projectId}).slice(0,100)});});
 app.get('/api/provider-jobs/:id',(req,res)=>{const j=getProviderJob(DATA,req.params.id);if(!j)return res.status(404).json({error:'not found'});res.json(j)});
 app.post('/api/provider-jobs/claim',(req,res)=>{try{res.json({jobs:claimProviderJobs(DATA,req.body||{})})}catch(e){res.status(400).json({error:String(e.message||e)})}});
@@ -112,6 +115,26 @@ function archiveSceneVariant(j,index){
   j.sceneVariants[key].push(variant); return variant;
 }
 
+
+app.post('/api/provider-jobs/:id/resolve-local',(req,res)=>{
+  try{
+    if(!process.env.PROVIDER_WORKER_TOKEN||req.get('x-provider-worker-token')!==process.env.PROVIDER_WORKER_TOKEN)return res.status(403).json({error:'forbidden'});
+    const existing=getProviderJob(DATA,req.params.id);if(!existing)return res.status(404).json({error:'provider job not found'});
+    if(existing.status==='ready')return res.json({job:existing,alreadyResolved:true});
+    if(existing.status!=='leased')return res.status(409).json({error:'provider job must be leased by a worker'});
+    const localFile=String(req.body?.localFile||''),kind=String(req.body?.kind||existing.kind||'image').toLowerCase();
+    const item=registerLocalAiCandidate(DATA,existing.projectId,existing.sceneIndex,{provider:existing.provider,kind,localFile,prompt:existing.prompt,jobId:existing.id,verifiedFree:true});
+    existing.status='ready';existing.resultKind=kind;existing.localFile=localFile;existing.model=String(req.body?.model||'').slice(0,200);delete existing.workerId;delete existing.leaseUntil;existing.updatedAt=new Date().toISOString();
+    fs.writeFileSync(path.join(DATA,'provider-jobs',`${existing.id}.json`),JSON.stringify(existing,null,2));
+    const j=load(existing.projectId);if(!j)return res.status(404).json({error:'project not found'});
+    if(['complete','failed'].includes(j.status)){
+      archiveSceneVariant(j,existing.sceneIndex);const scene=j.storyboard?.find(s=>s.index===existing.sceneIndex);if(scene)scene.variantSeed=Number(scene.variantSeed||0)+1;
+      try{fs.rmSync(path.join(projectDir(j.id),`scene-${String(existing.sceneIndex).padStart(2,'0')}`),{recursive:true,force:true})}catch{}
+      j.scenes=(j.scenes||[]).filter(s=>s.index!==existing.sceneIndex);j.status='queued';j.progress=25;delete j.error;delete j.render;save(j);setImmediate(kick);
+    }
+    res.json({job:existing,item,projectStatus:j.status});
+  }catch(e){res.status(400).json({error:String(e.message||e)})}
+});
 app.post('/api/provider-jobs/:id/resolve',(req,res)=>{
   try{
     const existing=getProviderJob(DATA,req.params.id);if(!existing)return res.status(404).json({error:'provider job not found'});if(existing.status==='ready')return res.json({job:existing,alreadyResolved:true});
