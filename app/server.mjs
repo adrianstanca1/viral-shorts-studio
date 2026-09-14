@@ -51,7 +51,7 @@ app.get('/api/capabilities',(req,res)=>res.json({
 
 app.get('/api/provider-jobs',(req,res)=>res.json(providerJobStatus(DATA)));
 app.get('/api/provider-jobs/:id',(req,res)=>{const j=getProviderJob(DATA,req.params.id);if(!j)return res.status(404).json({error:'not found'});res.json(j)});
-app.post('/api/provider-jobs',(req,res)=>{try{res.status(201).json(createProviderJob(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.post('/api/provider-jobs',(req,res)=>{try{const body=req.body||{};if(!load(String(body.projectId||'')))return res.status(404).json({error:'project not found'});res.status(201).json(createProviderJob(DATA,body))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 
 app.get('/api/projects/:id/ai-generation-plan',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
@@ -112,6 +112,7 @@ function archiveSceneVariant(j,index){
 
 app.post('/api/provider-jobs/:id/resolve',(req,res)=>{
   try{
+    const existing=getProviderJob(DATA,req.params.id);if(!existing)return res.status(404).json({error:'provider job not found'});if(existing.status==='ready')return res.json({job:existing,alreadyResolved:true});
     const job=resolveProviderJob(DATA,req.params.id,req.body||{});const j=load(job.projectId);if(!j)return res.status(404).json({error:'project not found'});
     const item=registerAiCandidate(DATA,job.projectId,job.sceneIndex,{provider:job.provider,kind:job.resultKind,url:job.url,prompt:job.prompt,jobId:job.id,verifiedFree:true});
     if(['complete','failed'].includes(j.status)){

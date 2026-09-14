@@ -21,7 +21,8 @@ export function createProviderJob(root,input={}){
   if(!projectId||!Number.isInteger(sceneIndex)||sceneIndex<1)throw new Error('projectId and sceneIndex required');
   if(!input.jobId){const existing=fs.readdirSync(dir(root)).filter(x=>x.endsWith('.json')).flatMap(x=>{try{return [JSON.parse(fs.readFileSync(path.join(dir(root),x),'utf8'))]}catch{return []}}).find(x=>x.projectId===projectId&&x.sceneIndex===sceneIndex&&x.provider===provider&&x.status==='pending');if(existing)return existing;}
   const id=String(input.jobId||crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,100);
-  const record={id,provider,projectId,sceneIndex,kind:String(input.kind||'video'),prompt:String(input.prompt||'').slice(0,4000),verifiedFree:input.verifiedFree===true,status:'pending',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const kind=String(input.kind||'video').toLowerCase();if(!['image','video'].includes(kind))throw new Error('unsupported job kind');
+  const record={id,provider,projectId,sceneIndex,kind,prompt:String(input.prompt||'').slice(0,4000),verifiedFree:input.verifiedFree===true,status:'pending',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(!record.verifiedFree)throw new Error('job must be verified free/no-charge');
   fs.writeFileSync(file(root,id),JSON.stringify(record,null,2));return record;
 }

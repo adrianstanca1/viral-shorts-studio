@@ -233,7 +233,7 @@ async function makeAiImportedScene(scene,sceneDir,ai,sharedNarration=null){
   const wav=sharedNarration?.wav||path.join(sceneDir,'voice.wav');
   const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint);
   const media=path.join(sceneDir,ai.kind==='video'?'ai-source.mp4':'ai-source.jpg');
-  await download(ai.url,media);
+  await download(ai.url,media,ai.kind==='video'?80_000_000:20_000_000);
   const visual=path.join(sceneDir,'ai-visual.mp4');
   if(ai.kind==='video')await makeVideoClip(media,visual,duration);else await makeImageClip(media,visual,duration,true);
   const overlayFile=path.join(sceneDir,'overlay.txt');fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
