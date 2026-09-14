@@ -1,0 +1,37 @@
+services:
+  viral-shorts:
+    build: .
+    container_name: viral-shorts-studio
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:3010:3010"
+    env_file:
+      - path: ../secrets/router.env
+        required: false
+    environment:
+      PORT: "3010"
+      DATA_DIR: /app/data
+      SCENE_CONCURRENCY: ${SCENE_CONCURRENCY:-2}
+      ROUTER_STATE_FILE: /app/data/provider-state.json
+      AUTONOMOUS_MODE: ${AUTONOMOUS_MODE:-true}
+      REQUIRE_APPROVAL_BEFORE_PUBLISH: ${REQUIRE_APPROVAL_BEFORE_PUBLISH:-true}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      PROVIDER_REGISTRY_FILE: /app/provider-registry.json
+      PEXELS_KEY: ${PEXELS_KEY:-}
+      PIXABAY_KEY: ${PIXABAY_KEY:-}
+      FAL_KEY: ${FAL_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${PROVIDER_REGISTRY_HOST_PATH:-./provider-registry.json}:/app/provider-registry.json:ro
+      - viral-shorts-data:/app/data
+    mem_limit: 6g
+    cpus: 4
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:3010/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  viral-shorts-data:

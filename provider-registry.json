@@ -1,0 +1,147 @@
+[
+  {
+    "credentialVariable": "PARALLEL_API_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "tavily",
+    "credentialVariable": "TAVILY_API_KEY",
+    "checkedAt": "2026-09-14T07:34:45.660186+00:00",
+    "enabled": true,
+    "generationVerified": false,
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "enabled-free-tier-research-only",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers",
+    "adapter": "viral-shorts-studio/researchTopic"
+  },
+  {
+    "credentialVariable": "FAL_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "firecrawl",
+    "credentialVariable": "FIRECRAWL_API_KEY",
+    "checkedAt": "2026-09-14T07:34:45.660817+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "credentialVariable": "THINKER_API_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "credentialVariable": "NVIDIA_API_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "sendgrid",
+    "credentialVariable": "SENDGRID_API_KEY",
+    "checkedAt": "2026-09-14T07:34:46.065847+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "credentialVariable": "OLLAMA_API_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "openrouter",
+    "credentialVariable": "OPENROUTER_API_KEY",
+    "checkedAt": "2026-09-14T07:34:45.658609+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 401,
+    "authentication": "rejected",
+    "policy": "disabled-authentication-rejected-zero-price-only",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "credentialVariable": "BRAVE_API_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "xai",
+    "credentialVariable": "XAI_API_KEY",
+    "checkedAt": "2026-09-14T07:34:45.725314+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 403,
+    "authentication": "rejected",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "vercel",
+    "credentialVariable": "VERCEL_TOKEN",
+    "checkedAt": "2026-09-14T07:34:45.928793+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "together",
+    "credentialVariable": "TOGETHER_API_KEY",
+    "checkedAt": "2026-09-14T07:34:45.819500+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "credentialVariable": "NVIDIA_API_KEY_SECONDARY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "huggingface",
+    "credentialVariable": "HF_TOKEN",
+    "checkedAt": "2026-09-14T07:34:45.659529+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  }
+]
