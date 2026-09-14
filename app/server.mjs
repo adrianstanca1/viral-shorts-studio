@@ -8,7 +8,7 @@ import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
 import { buildAiGenerationPlan, summarizeAiPlan } from './ai-generation-manager.mjs';
 import { registerAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
-import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs } from './provider-job-router.mjs';
+import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, claimProviderJobs, releaseProviderJob, reconcileProviderJobs } from './provider-job-router.mjs';
 
 const app = express();
 app.use(express.json({limit:'2mb'}));
@@ -51,6 +51,8 @@ app.get('/api/capabilities',(req,res)=>res.json({
 
 app.get('/api/provider-jobs',(req,res)=>{const status=String(req.query.status||'').trim(),provider=String(req.query.provider||'').trim().toLowerCase(),projectId=String(req.query.projectId||'').trim();res.json({...providerJobStatus(DATA),jobs:listProviderJobs(DATA,{status,provider,projectId}).slice(0,100)});});
 app.get('/api/provider-jobs/:id',(req,res)=>{const j=getProviderJob(DATA,req.params.id);if(!j)return res.status(404).json({error:'not found'});res.json(j)});
+app.post('/api/provider-jobs/claim',(req,res)=>{try{res.json({jobs:claimProviderJobs(DATA,req.body||{})})}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.post('/api/provider-jobs/:id/release',(req,res)=>{try{res.json(releaseProviderJob(DATA,req.params.id,req.body?.error))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.post('/api/provider-jobs',(req,res)=>{try{const body=req.body||{};if(!load(String(body.projectId||'')))return res.status(404).json({error:'project not found'});res.status(201).json(createProviderJob(DATA,body))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 
 app.get('/api/projects/:id/ai-generation-plan',(req,res)=>{
@@ -62,7 +64,7 @@ app.post('/api/projects/:id/ai-generation-plan',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
   if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project must finish before cloud scene planning'});
   const body=req.body||{},plan=buildAiGenerationPlan(j,body);j.aiGenerationPlan=plan;j.aiFreeAllowance=plan.allowance;save(j);
-  const jobsCreated=[];if(body.createJobs===true){for(const item of plan.selected){jobsCreated.push(createProviderJob(DATA,{provider:plan.provider,projectId:j.id,sceneIndex:item.index,kind:item.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true}))}}
+  const jobsCreated=[];if(body.createJobs===true){for(const item of plan.selected){jobsCreated.push(createProviderJob(DATA,{provider:plan.provider,projectId:j.id,sceneIndex:item.index,kind:item.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true,priority:item.priority}))}}
   res.status(201).json({plan,summary:summarizeAiPlan(plan),jobs:jobsCreated});
 });
 
@@ -172,5 +174,6 @@ app.get('/api/projects/:id/video',(req,res)=>{ const j=load(req.params.id); if(!
 app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.credits||!fs.existsSync(j.render.credits)) return res.status(404).json({error:'credits not ready'}); res.sendFile(j.render.credits); });
 
 for(const job of list()){if(!['complete','failed','queued'].includes(job.status)){job.status='failed';job.error='Interrupted by restart; retry resumes completed scenes';save(job);}}
+reconcileProviderJobs(DATA);setInterval(()=>reconcileProviderJobs(DATA),30000).unref();
 setImmediate(kick);
 app.listen(PORT,'0.0.0.0',()=>console.log(`Viral Shorts Studio listening on ${PORT}`));

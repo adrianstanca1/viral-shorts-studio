@@ -60,3 +60,6 @@ The studio can rank finished scenes for cloud AI enhancement without spending bl
 ### Provider job reliability and security
 
 Provider result ingestion now validates public HTTPS URLs, rejects local/private literal IP targets, validates image/video result kinds before changing job state, and preserves AI provider/score metadata when scene variants are archived or restored. `GET /api/provider-jobs` also returns a filtered job list (`status`, `provider`, `projectId`) alongside queue counts so an external free-provider worker can safely harvest pending jobs. A built-in `npm test` self-test covers the free-only job lifecycle, URL guardrails and AI scene-budget selection.
+
+### AI provider queue orchestration
+Provider jobs now support priority scheduling, worker leases, safe release/retry, TTL expiry, and stale-lease recovery. Workers can claim up to eight verified-free jobs through `POST /api/provider-jobs/claim`; completed results continue through the existing resolve endpoint and automatically re-enter scene competition. The browser metrics show the live AI queue and project-level free-cloud plan. Paid fallback remains disabled.
