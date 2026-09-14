@@ -52,6 +52,24 @@ async function maybeAutoCloudPlan(id){
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
 app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA),workerProviders:providerWorkerInventory(DATA),freeProviderRouting:freeProviderSummary(DATA)}));
+app.get('/api/diagnostics',async(req,res)=>{
+  try{
+    const st=fs.statfsSync(DATA),freeBytes=Number(st.bavail)*Number(st.bsize),totalBytes=Number(st.blocks)*Number(st.bsize),freePercent=totalBytes?Number((100*freeBytes/totalBytes).toFixed(1)):0;
+    const text=await textProviderStatus(),local=text.providers?.find(p=>p.id==='ollama-local');
+    const jobsState=providerJobStatus(DATA),pending=(jobsState.counts?.pending||0)+(jobsState.counts?.leased||0);
+    const workerFile=path.join(DATA,'provider-worker-status.json');let workerAgeSeconds=null;try{workerAgeSeconds=Math.max(0,Math.round((Date.now()-fs.statSync(workerFile).mtimeMs)/1000));}catch{}
+    const checks=[
+      {id:'storage',label:'Storage',ok:freePercent>=10,detail:`${(freeBytes/1073741824).toFixed(1)} GB free`},
+      {id:'local-ai',label:'Local AI',ok:local?.status==='available'&&local?.enabled!==false,detail:local?.status||'unavailable'},
+      {id:'queue',label:'Generation queue',ok:pending<25,detail:`${pending} pending/leased`},
+      {id:'worker',label:'Provider worker',ok:workerAgeSeconds===null||workerAgeSeconds<180,detail:workerAgeSeconds===null?'no heartbeat yet':`${workerAgeSeconds}s since heartbeat`},
+      {id:'cost-policy',label:'Cost policy',ok:true,detail:'free-only; paid fallback disabled'}
+    ];
+    const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
+    res.json({status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending},activeProject:active,shuttingDown,generatedAt:new Date().toISOString()});
+  }catch(e){res.status(500).json({status:'degraded',error:'diagnostics unavailable'});}
+});
+
 app.get('/api/stats',(req,res)=>{
   const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
