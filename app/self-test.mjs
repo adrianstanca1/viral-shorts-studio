@@ -11,7 +11,7 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
-import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance } from './content-quality.mjs';
+import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis } from './content-quality.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
 const sampleSources=[{title:'Great Smog of London',url:'https://example.com/1',extract:'The Great Smog of London occurred in December 1952 and caused thousands of deaths.',provider:'wikipedia'},{title:'Unrelated',url:'https://example.com/2',extract:'A short generic sentence about another topic.',provider:'web'}];
@@ -57,3 +57,5 @@ const captionFile=path.join(root,'phrase-captions.srt');writePhraseCaptions(capt
 const captionText=fs.readFileSync(captionFile,'utf8');assert.match(captionText,/00:00:00,000 --> 00:00:02,000/);assert.match(captionText,/One two three four/);assert.match(captionText,/five six seven eight/);
 fs.rmSync(root,{recursive:true,force:true});
 console.log('self-test: ok');
+
+const retention=retentionAnalysis([{index:1,beat:'hook',narration:'But one hidden detail changed how London responded.',duration:3},{index:2,beat:'payoff',narration:'So the disaster ultimately changed clean air policy.',duration:3}]);assert.ok(retention.score>=70);

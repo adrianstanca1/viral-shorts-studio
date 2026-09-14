@@ -40,3 +40,17 @@ export function sceneAcceptance(score,beat='context'){
   const threshold=['hook','payoff','evidence'].includes(beat)?72:64;
   return {score:Number(score||0),threshold,accepted:Number(score||0)>=threshold};
 }
+
+export function retentionAnalysis(scenes=[]){
+  const rows=scenes.map((s,i)=>{
+    const words=clean(s.narration).split(/\s+/).filter(Boolean).length,duration=Math.max(.1,Number(s.duration||s.durationHint||1));
+    const wps=Number((words/duration).toFixed(2));let risk=0;const reasons=[];
+    if(wps>3.6){risk+=25;reasons.push('too-fast');}else if(wps<1.45){risk+=18;reasons.push('too-slow');}
+    if(i>0&&overlap(s.narration,scenes[i-1]?.narration||'')>=4){risk+=18;reasons.push('repetitive');}
+    if(s.beat==='hook'&&narrationQuality(s.narration,{beat:'hook'})<75){risk+=25;reasons.push('weak-hook');}
+    if(s.beat==='payoff'&&narrationQuality(s.narration,{beat:'payoff'})<75){risk+=20;reasons.push('weak-payoff');}
+    return {index:s.index,words,duration:Number(duration.toFixed(2)),wordsPerSecond:wps,risk:Math.min(100,risk),reasons};
+  });
+  const avgRisk=rows.length?rows.reduce((n,x)=>n+x.risk,0)/rows.length:100;
+  return {score:Math.max(0,Math.round(100-avgRisk)),highRiskScenes:rows.filter(x=>x.risk>=25).map(x=>x.index),scenes:rows};
+}
