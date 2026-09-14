@@ -9,3 +9,14 @@ data/
 .DS_Store
 __pycache__/
 *.pyc
+# Secret/key material
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa
+id_ed25519
+credentials*.json
+service-account*.json
+.npmrc
