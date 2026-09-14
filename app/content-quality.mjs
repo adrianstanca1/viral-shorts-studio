@@ -43,6 +43,33 @@ export function sceneAcceptance(score,beat='context'){
 
 
 
+
+export function repairNarration(scenes=[],sources=[]){
+  const facts=rankFacts('',sources);
+  const used=new Set();
+  return scenes.map((scene,i)=>{
+    const original=clean(scene.narration), prev=clean(scenes[i-1]?.narration||'');
+    const reasons=[]; let candidate=original, sourceIndex=scene.sourceIndex;
+    if(scene.beat==='hook'&&narrationQuality(original,{beat:'hook'})<75)reasons.push('weak-hook');
+    if(scene.beat==='payoff'&&narrationQuality(original,{beat:'payoff'})<75)reasons.push('weak-payoff');
+    if(i>0&&overlap(original,prev)>=4)reasons.push('repetitive');
+    if(reasons.length){
+      const fact=facts.find(f=>!used.has(f.text)&&overlap(f.text,prev)<4) || facts.find(f=>!used.has(f.text));
+      if(fact){
+        used.add(fact.text); sourceIndex=fact.sourceIndex;
+        const words=clean(fact.text).split(/\s+/).slice(0,scene.beat==='hook'||scene.beat==='payoff'?13:14).join(' ').replace(/[,:;]+$/,'');
+        if(scene.beat==='hook')candidate=`But ${words.charAt(0).toLowerCase()+words.slice(1)}`;
+        else if(scene.beat==='payoff')candidate=`So ${words.charAt(0).toLowerCase()+words.slice(1)}`;
+        else candidate=words;
+        if(candidate&&!/[.!?]$/.test(candidate))candidate+='.';
+      }
+    }
+    const before=narrationQuality(original,{beat:scene.beat}), after=narrationQuality(candidate,{beat:scene.beat});
+    const changed=candidate!==original&&after>=before;
+    return {...scene,narration:changed?candidate:original,sourceIndex:changed?sourceIndex:scene.sourceIndex,narrationRepair:{changed,reasons:changed?reasons:[],beforeScore:before,afterScore:changed?after:before}};
+  });
+}
+
 export function fitNarrationBudget(scenes=[],targetDuration=60){
   if(!scenes.length)return [];
   const totalBudget=Math.max(scenes.length*7,Math.floor(Number(targetDuration||60)*3.35));

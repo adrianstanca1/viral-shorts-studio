@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { writeGenerationQueue, generativeStatus } from './generative-router.mjs';
 import { listAiCandidates } from './ai-candidate-router.mjs';
-import { rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing } from './content-quality.mjs';
+import { rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
 
 const UA = 'ViralShortsStudio/0.2 (self-hosted creator tool)';
 const mediaBreakers=new Map();
@@ -426,10 +426,12 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
       }
     }
+    storyboard=repairNarration(storyboard,sources);
+    const narrationRepairs=storyboard.filter(s=>s.narrationRepair?.changed).map(s=>({index:s.index,reasons:s.narrationRepair.reasons,beforeScore:s.narrationRepair.beforeScore,afterScore:s.narrationRepair.afterScore}));
     storyboard=fitNarrationBudget(storyboard,Number(project.duration));
     storyboard=enrichVisualDirection(storyboard,sources,project.topic,project.style||'documentary');
     storyboard=optimizePacing(storyboard,Number(project.duration));
-    update({storyboard,pacingOptimized:true,visualDirectionVersion:2});
+    update({storyboard,pacingOptimized:true,narrationRepair:{count:narrationRepairs.length,scenes:narrationRepairs},visualDirectionVersion:2});
     const mediaStarted=nowMs();
     const cacheKey=`${project.topic}|media-v2`;
     const mediaCached=await cachedJson(root,'media',cacheKey,12*60*60*1000,async()=>{
@@ -523,12 +525,15 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const weakVisualScenes=sceneQuality.filter(x=>x.score<64).map(x=>x.index),visualQualityPercent=Math.round(100*sceneQuality.filter(x=>x.score>=64).length/Math.max(1,sceneQuality.length));
     const retention=retentionAnalysis(scenes);
     const retentionReady=retention.score>=72&&retention.highRiskScenes.length<=Math.max(1,Math.floor(scenes.length*.2));
+    const narrationScores=storyboard.map(s=>({index:s.index,score:narrationQuality(s.narration,{beat:s.beat})}));
+    const weakNarrationScenes=narrationScores.filter(x=>x.score<75).map(x=>x.index);
+    const averageNarrationScore=narrationScores.length?Math.round(narrationScores.reduce((n,x)=>n+x.score,0)/narrationScores.length):0;
     const viralityScore=Math.round(clamp(50+(scenes.length>=6?8:0)+(sourceCount>=5?7:0)+(realVideoScenes*3)+(Math.abs(durationDelta)<=0.5?10:0)+(retention.score>=80?12:retention.score>=70?7:0),0,100));
     const slug=project.topic.replace(/[^a-z0-9 ]/gi,' ').trim();
     const publish={title:`${slug}: the part most people miss`.slice(0,90),description:`A fast, source-backed ${project.niche.replace('-', ' ')} short about ${slug}. Verify claims using the included credits before publishing.`,hashtags:['#shorts',`#${project.niche.replace(/-/g,'')}`,'#storytelling']};
     stageMetric(metrics,'totalSeconds',totalStarted);
-    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady&&averageVisualScore>=70&&weakVisualScenes.length<=Math.floor(scenes.length*.25);
-    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,viralityScore},publish,metrics,completedAt:new Date().toISOString()});
+    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady&&averageNarrationScore>=78&&weakNarrationScenes.length<=Math.max(1,Math.floor(scenes.length*.2))&&averageVisualScore>=70&&weakVisualScenes.length<=Math.floor(scenes.length*.25);
+    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,narrationScores,averageNarrationScore,weakNarrationScenes,narrationRepair:project.narrationRepair||{count:0,scenes:[]},viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
     update({status:'failed',error:String(error.message||error),failedAt:new Date().toISOString()});
