@@ -53,3 +53,6 @@ Verified-free external generation jobs can now be registered as pending, resolve
 Endpoints: `POST /api/provider-jobs`, `GET /api/provider-jobs/:id`, `POST /api/provider-jobs/:id/resolve`, and `POST /api/provider-jobs/:id/fail`.
 
 The bridge keeps provider billing outside the render worker: connector jobs are accepted only after an explicit no-charge/free grant is used, then their HTTPS result is registered to a scene. This prevents the autonomous VPS from silently spending credits while still letting AI footage compete in the normal candidate scorer.
+
+### Free AI scene budget manager
+The studio can rank finished scenes for cloud AI enhancement without spending blindly. `GET /api/projects/:id/ai-generation-plan` previews priorities; `POST` stores a plan and can create deduplicated pending provider jobs when `createJobs:true`. Planning favors hook/payoff and weak visual scores, skips scenes that already have AI or strong visuals, and always records `freeOnly:true` / `paidFallback:false`. Provider results are harvested later through the verified-free provider job bridge.

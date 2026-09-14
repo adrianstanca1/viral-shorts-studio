@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { produceProject, mediaProviderStatus } from './pipeline.mjs';
 import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
+import { buildAiGenerationPlan, summarizeAiPlan } from './ai-generation-manager.mjs';
 import { registerAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus } from './provider-job-router.mjs';
 
@@ -40,7 +41,7 @@ app.get('/api/stats',(req,res)=>{
 });
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
-  stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','verified-free-ai-candidates','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
+  stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','verified-free-ai-candidates','free-allowance-planning','provider-job-harvesting','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
   formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes'],
   styles,
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],
@@ -51,6 +52,19 @@ app.get('/api/capabilities',(req,res)=>res.json({
 app.get('/api/provider-jobs',(req,res)=>res.json(providerJobStatus(DATA)));
 app.get('/api/provider-jobs/:id',(req,res)=>{const j=getProviderJob(DATA,req.params.id);if(!j)return res.status(404).json({error:'not found'});res.json(j)});
 app.post('/api/provider-jobs',(req,res)=>{try{res.status(201).json(createProviderJob(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+
+app.get('/api/projects/:id/ai-generation-plan',(req,res)=>{
+  const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
+  const plan=buildAiGenerationPlan(j,{provider:req.query.provider||'higgsfield',allowance:Number(req.query.allowance||j.aiFreeAllowance||0),maxScenes:Number(req.query.maxScenes||4),minScore:Number(req.query.minScore||82)});
+  res.json(plan);
+});
+app.post('/api/projects/:id/ai-generation-plan',(req,res)=>{
+  const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
+  if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project must finish before cloud scene planning'});
+  const body=req.body||{},plan=buildAiGenerationPlan(j,body);j.aiGenerationPlan=plan;j.aiFreeAllowance=plan.allowance;save(j);
+  const jobsCreated=[];if(body.createJobs===true){for(const item of plan.selected){jobsCreated.push(createProviderJob(DATA,{provider:plan.provider,projectId:j.id,sceneIndex:item.index,kind:item.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true}))}}
+  res.status(201).json({plan,summary:summarizeAiPlan(plan),jobs:jobsCreated});
+});
 
 app.get('/api/projects/:id/ai-candidates',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
