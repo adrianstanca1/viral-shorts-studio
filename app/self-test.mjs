@@ -12,7 +12,7 @@ import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
 import { recoverProjectState, prepareProjectRetry, inferFailureStage, failureIsRecent } from './recovery.mjs';
-import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
+import { sourceQuality, rankSources, rankFacts, selectNarrativeFacts, narrativeArcAnalysis, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
 import { authConfigured, assertLaunchSecurity, ownerSessionToken, safeEqual } from './security.mjs';
 import { ensurePublishApproval, decidePublishApproval, invalidatePublishApproval } from './publish-approval.mjs';
 
@@ -29,6 +29,9 @@ const sampleSources=[{title:'Great Smog of London',url:'https://example.com/1',e
 assert.ok(sourceQuality('Great Smog London',sampleSources[0])>sourceQuality('Great Smog London',sampleSources[1]));
 assert.equal(rankSources('Great Smog London',sampleSources)[0].title,'Great Smog of London');
 assert.ok(Array.isArray(rankFacts('Great Smog London',rankSources('Great Smog London',sampleSources))));
+const diverseFacts=selectNarrativeFacts('Great Smog London',rankSources('Great Smog London',sampleSources),3);assert.ok(diverseFacts.length>=1);assert.ok(diverseFacts.every((x,i)=>diverseFacts.slice(0,i).every(y=>x.text!==y.text)));
+const arcGood=narrativeArcAnalysis([{index:1,beat:'hook',narration:'But one hidden detail changed how London responded.'},{index:2,beat:'evidence',narration:'Government reports recorded thousands of deaths in 1952.'},{index:3,beat:'payoff',narration:'The disaster led Parliament to pass stronger clean air law.'}]);assert.ok(arcGood.score>=85);
+const arcBad=narrativeArcAnalysis([{index:1,beat:'hook',narration:'London had a smog event.'},{index:2,beat:'context',narration:'London had a smog event.'},{index:3,beat:'payoff',narration:'London had a smog event.'}]);assert.ok(arcBad.score<arcGood.score);assert.ok(arcBad.highRiskScenes.length>0);
 assert.ok(narrationQuality('But one hidden detail changed how London responded.',{beat:'hook'})>=70);
 assert.equal(sceneAcceptance(80,'hook').accepted,true);assert.equal(sceneAcceptance(60,'context').accepted,false);
 assert.equal(canQueueFreeProvider({verifiedFree:true,executable:true,connectorOnly:false,remaining:1}),true);assert.equal(canQueueFreeProvider({verifiedFree:true,executable:false,connectorOnly:true,remaining:1}),false);assert.equal(canQueueFreeProvider({verifiedFree:true,executable:true,connectorOnly:false,remaining:0}),false);

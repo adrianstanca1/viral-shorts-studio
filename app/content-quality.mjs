@@ -27,6 +27,35 @@ export function rankFacts(topic,sources=[]){
   }
   return out.sort((a,b)=>b.score-a.score);
 }
+export function selectNarrativeFacts(topic,sources=[],count=6){
+  const ranked=rankFacts(topic,sources),picked=[];
+  const consequence=/\b(led|result|because|therefore|response|responded|changed|caused|after|passed|law|act|policy|reform|impact|effect|consequence|death|damage|investigation|convicted|discovered|revealed)\b/i;
+  for(const fact of ranked){
+    const text=clean(fact.text);
+    const duplicate=picked.some(x=>overlap(text,x.text)>=Math.min(6,Math.max(4,Math.floor(terms(text).size*.45))));
+    if(duplicate)continue;
+    const novelty=Math.max(0,12-picked.reduce((n,x)=>Math.max(n,overlap(text,x.text)*2),0));
+    const causal=consequence.test(text)?8:0;
+    picked.push({...fact,narrativeScore:Number(fact.score||0)+novelty+causal,causal:causal>0});
+    if(picked.length>=Math.max(1,Number(count||1)))break;
+  }
+  return picked;
+}
+
+export function narrativeArcAnalysis(scenes=[]){
+  const rows=scenes.map((scene,i)=>{
+    const text=clean(scene.narration),prev=clean(scenes[i-1]?.narration||'');
+    const repetition=i>0?overlap(text,prev):0;let risk=0;const reasons=[];
+    if(i>0&&repetition>=4){risk+=30;reasons.push('adjacent-fact-repeat');}
+    if(i>1&&scenes.slice(0,i-1).some(x=>overlap(text,x.narration)>=6)){risk+=18;reasons.push('earlier-fact-repeat');}
+    if(scene.beat==='payoff'&&!/\b(led|result|because|therefore|ultimately|response|responded|changed|caused|passed|law|act|policy|reform|impact|effect|meant|shows|explains)\b/i.test(text)){risk+=30;reasons.push('unresolved-payoff');}
+    if(scene.beat==='evidence'&&!/\b\d+(?:\.\d+)?%?\b|\b(19|20)\d{2}\b|\b(report|record|document|evidence|study|investigation|court|police|government|official)\b/i.test(text)){risk+=12;reasons.push('weak-evidence');}
+    return {index:scene.index,beat:scene.beat,repetition,risk:Math.min(100,risk),reasons};
+  });
+  const avgRisk=rows.length?rows.reduce((n,x)=>n+x.risk,0)/rows.length:100;
+  return {score:Math.max(0,Math.round(100-avgRisk)),highRiskScenes:rows.filter(x=>x.risk>=25).map(x=>x.index),scenes:rows};
+}
+
 export function narrationQuality(text,{beat='context'}={}){
   const t=clean(text),words=t.split(/\s+/).filter(Boolean);let score=100;
   if(words.length<7)score-=25;if(words.length>18)score-=Math.min(35,(words.length-18)*4);
