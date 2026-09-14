@@ -530,11 +530,20 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       const neighborAssets=[...(scenes[pos-1]?.assets||[]),...(scenes[pos+1]?.assets||[])].map(assetKey).filter(Boolean);
       try{
         const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+29,avoidAssetKeys:neighborAssets};
-        const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);const candidate=retry.selected;
-        const gate=sceneAcceptance(candidate?.candidateScore,plan.beat),trial=[...scenes];trial[pos]=candidate;const trialRhythm=editingRhythmAnalysis(trial,storyboard);
-        const improved=gate.accepted&&trialRhythm.score>editingRhythm.score;
-        editRepairs.push({index,beforeScore:editingRhythm.score,afterScore:trialRhythm.score,beforeVisual:Number(original.candidateScore||0),afterVisual:Number(candidate?.candidateScore||0),improved,reason:'editing-rhythm'});
-        if(improved){candidate.qualityGate=gate;scenes[pos]=candidate;editingRhythm=trialRhythm;}
+        const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);
+        const options=[retry.selected];
+        if(plan.style!=='whiteboard'&&!['hook','payoff'].includes(plan.beat)){
+          try{const wb=await makeSceneCandidates({...retryScene,style:'whiteboard'},dir,project.topic,mediaPool,videoPool,1);if(wb.selected)options.push(wb.selected);}catch{}
+        }
+        let best=null;
+        for(const candidate of options.filter(Boolean)){
+          const gate=sceneAcceptance(candidate.candidateScore,plan.beat),trial=[...scenes];trial[pos]=candidate;const trialRhythm=editingRhythmAnalysis(trial,storyboard);
+          if(!gate.accepted)continue;
+          if(!best||trialRhythm.score>best.rhythm.score||(trialRhythm.score===best.rhythm.score&&Number(candidate.candidateScore||0)>Number(best.candidate.candidateScore||0)))best={candidate,gate,rhythm:trialRhythm};
+        }
+        const improved=!!best&&best.rhythm.score>editingRhythm.score;
+        editRepairs.push({index,beforeScore:editingRhythm.score,afterScore:best?.rhythm.score??editingRhythm.score,beforeVisual:Number(original.candidateScore||0),afterVisual:Number(best?.candidate?.candidateScore||0),afterType:best?.candidate?.visualType||null,improved,reason:'editing-rhythm'});
+        if(improved){best.candidate.qualityGate=best.gate;scenes[pos]=best.candidate;editingRhythm=best.rhythm;}
       }catch(error){editRepairs.push({index,beforeScore:editingRhythm.score,improved:false,error:String(error?.message||error).slice(0,180)});}
     }
     update({scenes:[...scenes].sort((a,b)=>a.index-b.index),autoRepairs,editRepairs,editingRhythm});

@@ -34,7 +34,7 @@ export function narrationQuality(text,{beat='context'}={}){
   if(!/[.!?]$/.test(t))score-=3;
   if(beat==='hook'&&!/[?!]|\b(but|until|except|actually|hidden|missed|why|how)\b|\b\d{2,4}\b/i.test(t))score-=12;
   if(beat==='payoff'&&!/\b(so|because|therefore|ultimately|result|changed|meant|shows|explains|response|responded|led|passed|act|law|policy)\b/i.test(t))score-=10;
-  if(/\b(?:the|a|an|of|to|from|with|including|great|clean|led|caused|became|remained)\.$/i.test(t))score-=30;
+  if(/\b(?:the|a|an|of|to|from|with|including|great|clean|led|caused|became|remained)\.$/i.test(t)||/\b(?:and|or)\s+(?:the|a|an)\s+\w+\.$/i.test(t))score-=30;
   return Math.max(0,Math.round(score));
 }
 export function sceneAcceptance(score,beat='context'){
