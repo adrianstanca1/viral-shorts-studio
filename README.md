@@ -76,3 +76,6 @@ The studio now chooses cloud providers from the live zero-cost verification ledg
 
 ### Ollama local + cloud and Hugging Face cloud
 Text routing now supports both local Ollama models and Ollama Cloud through the same studio router. Local Qwen remains first priority. Ollama Cloud is available as `ollama-cloud` when a valid cloud API key is configured; it fails closed on authentication errors. Hugging Face Inference Providers are also supported as a guarded cloud text fallback with a configurable daily call cap. HF routed inference uses monthly free credits and is therefore disabled by default if the account has no usable free credit. Neither route can silently become a paid fallback.
+
+### Text model portfolio
+The text router is task-aware and local-first. Qwen3 1.7B handles fast work, Qwen3 4B handles stronger/safety-sensitive storyboarding, and guarded cloud portfolios are prepared for Ollama Cloud and Hugging Face. Cloud providers use circuit breakers on authentication/quota failures and remain disabled unless their explicit runtime gates are enabled; no paid fallback is allowed.

@@ -8,9 +8,11 @@ import { isPublicHttps } from './url-safety.mjs';
 import { recordFreeEvidence, providerEvidence, consumeFreeAllowance, evidenceFresh } from './provider-verifier.mjs';
 import { registerLocalAiCandidate } from './ai-candidate-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
+import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
+const catalog=textModelCatalog();assert.ok(catalog.ollama.length>=3);assert.ok(catalog.huggingface.length>=4);assert.equal(pickCloudModel('ollama',{task:'storyboard',quality:'strong'}),'gpt-oss:120b-cloud');assert.equal(pickCloudModel('huggingface',{task:'storyboard',quality:'balanced'}),'openai/gpt-oss-20b');
 assert.equal(isPublicHttps('https://example.com/a.mp4'),true);
 for(const u of ['http://example.com/a','https://127.0.0.1/a','https://169.254.169.254/a','https://10.0.0.1/a','https://[::1]/a','https://localhost/a'])assert.equal(isPublicHttps(u),false,u);
 const job=createProviderJob(root,{provider:'higgsfield',projectId:'p1',sceneIndex:1,kind:'video',verifiedFree:true,prompt:'test',priority:90});

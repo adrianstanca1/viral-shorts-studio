@@ -365,7 +365,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         const count=storyboard.length;
         const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
         const compactSources=sources.map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,900)}));
-        const completion=await completeText({target:count*55,validate,messages:[
+        const completion=await completeText({task:'storyboard',quality:['true-crime','fact-check'].includes(project.niche)?'strong':'balanced',target:count*55,validate,messages:[
           {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. Keep each narration concise at 8-14 words so it fits a fast vertical short. Keep overlay under 72 characters.'},
           {role:'user',content:JSON.stringify({topic:project.topic,sceneCount:count,sources:compactSources})}
         ]});
