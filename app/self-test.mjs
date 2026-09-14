@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus, providerJobsSnapshot, deleteProviderJobsForProject } from './provider-job-router.mjs';
+import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus, providerJobsSnapshot, deleteProviderJobsForProject, maintainProviderJobs } from './provider-job-router.mjs';
 import { buildAiGenerationPlan } from './ai-generation-manager.mjs';
 import { isPublicHttps } from './url-safety.mjs';
 import { recordFreeEvidence, providerEvidence, consumeFreeAllowance, evidenceFresh } from './provider-verifier.mjs';
@@ -115,4 +115,9 @@ const grammarBudget=fitNarrationBudget([
 assert.ok(!/\bthat[.!?]$/i.test(grammarBudget[0].narration));assert.ok(!/\ba dramatic[.!?]$/i.test(grammarBudget[1].narration));assert.ok(!/^Prior to\b/i.test(grammarBudget[2].narration));
 assert.ok(narrationQuality('The Great Smog was a deadly air pollution event that.',{beat:'hook'})<75);assert.ok(narrationQuality('The effects led to a dramatic.',{beat:'evidence'})<75);assert.ok(narrationQuality('Prior to the enactment of the Act.',{beat:'context'})<75);
 
+
+const maintenanceRoot=fs.mkdtempSync(path.join(os.tmpdir(),'viral-provider-maint-'));
+const orphan=createProviderJob(maintenanceRoot,{projectId:'missing-project',sceneIndex:1,provider:'external',kind:'video',verifiedFree:true});
+const maintained=maintainProviderJobs(maintenanceRoot,{projectIds:['live-project'],retentionDays:30});assert.equal(maintained.orphanedRetired,1);assert.equal(getProviderJob(maintenanceRoot,orphan.id).status,'expired');
+fs.rmSync(maintenanceRoot,{recursive:true,force:true});
 console.log('self-test: ok');

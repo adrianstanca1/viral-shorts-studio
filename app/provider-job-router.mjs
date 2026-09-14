@@ -66,6 +66,23 @@ export function providerJobsSnapshot(root,filter={}){
 export function listProviderJobs(root,filter={}){return providerJobsSnapshot(root,filter).jobs;}
 export function providerJobStatus(root){const {jobs,...status}=providerJobsSnapshot(root);return status;}
 
+
+export function maintainProviderJobs(root,{projectIds=null,retentionDays=30,now=Date.now}={}){
+  const all=readAll(root);reconcileItems(root,all);const hasInventory=Array.isArray(projectIds),valid=new Set(projectIds||[]),cutoff=now()-Math.max(1,Number(retentionDays||30))*86400000;
+  let orphanedRetired=0,pruned=0;
+  for(const record of all){
+    if(hasInventory&&!valid.has(record.projectId)&&!finalStates.has(record.status)){
+      record.status='expired';record.error='project no longer exists; provider job retired';record.orphanedAt=nowIso();delete record.workerId;delete record.leaseUntil;write(root,record);orphanedRetired++;
+    }
+  }
+  for(const record of readAll(root)){
+    if(!finalStates.has(record.status))continue;
+    const stamp=Date.parse(record.updatedAt||record.createdAt||'');if(!Number.isFinite(stamp)||stamp>cutoff)continue;
+    try{fs.rmSync(file(root,record.id),{force:true});pruned++;}catch{}
+  }
+  return {orphanedRetired,pruned,retentionDays:Number(retentionDays||30)};
+}
+
 export function deleteProviderJobsForProject(root,projectId){
   const id=String(projectId||'').trim();if(!id)return 0;let removed=0;
   for(const record of readAll(root)){if(record.projectId!==id)continue;try{fs.rmSync(file(root,record.id),{force:true});removed++;}catch{}}
