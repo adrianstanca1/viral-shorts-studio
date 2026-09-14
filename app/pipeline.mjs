@@ -445,6 +445,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     if(!sources.length) throw new Error('No research sources found');
     stageMetric(metrics,'researchSeconds',researchStarted);
     update({sources,researchCacheHit,progress:15,status:'storyboarding',metrics});
+    const storyboardStarted=nowMs();
     let storyboard=project.storyboard?.length?project.storyboard:buildStoryboard({...project,sources});
     if(!project.storyboard?.length){
       try{
@@ -471,7 +472,8 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     storyboard=enrichVisualDirection(storyboard,sources,project.topic,project.style||'documentary');
     storyboard=optimizePacing(storyboard,Number(project.duration));
     const arcAfter=narrativeArcAnalysis(storyboard);
-    update({storyboard,pacingOptimized:true,narrationRepair:{count:narrationRepairs.length,scenes:narrationRepairs},narrativeArc:{before:arcBefore,after:arcAfter,repairs:arcRepair.repairs},visualDirectionVersion:3});
+    stageMetric(metrics,'storyboardSeconds',storyboardStarted);
+    update({storyboard,pacingOptimized:true,narrationRepair:{count:narrationRepairs.length,scenes:narrationRepairs},narrativeArc:{before:arcBefore,after:arcAfter,repairs:arcRepair.repairs},visualDirectionVersion:3,metrics});
     const mediaStarted=nowMs();
     const cacheKey=`${project.topic}|media-v3`;
     const mediaCached=await cachedJson(root,'media',cacheKey,12*60*60*1000,async()=>{

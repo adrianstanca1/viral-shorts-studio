@@ -46,6 +46,18 @@ export function recoverProjectState(job,{exists=fs.existsSync,now=()=>new Date()
   return {changed:false,job};
 }
 
+
+export function classifyRecoverability(job={}){
+  if(!job||job.status!=='failed')return {recoverable:false,confidence:'none',reason:'project is not failed'};
+  const stage=inferFailureStage(job),error=String(job.error||'').toLowerCase();
+  if(/permission denied|unauthori[sz]ed|invalid api|authentication|forbidden/.test(error))return {recoverable:false,confidence:'low',reason:'credential or permission failure requires configuration'};
+  if(/no research sources|invalid topic|unsupported/.test(error))return {recoverable:false,confidence:'low',reason:'input or source failure likely needs manual correction'};
+  if(stage==='generating-scenes'&&/commons|asset|media|image|video|download/.test(error))return {recoverable:true,confidence:'high',reason:'media retrieval can be retried with current fallback logic'};
+  if(stage==='assembling'&&/ffmpeg|ffprobe|codec|swscaler|audio|caption|assembl/.test(error))return {recoverable:true,confidence:'high',reason:'render tooling is available in the current runtime'};
+  if(['research','storyboarding','generating-scenes','assembling'].includes(stage))return {recoverable:true,confidence:'medium',reason:`current pipeline can retry from ${stage}`};
+  return {recoverable:true,confidence:'low',reason:'retry is possible but outcome is uncertain'};
+}
+
 export function prepareProjectRetry(job,{now=()=>new Date().toISOString()}={}){
   if(!job||typeof job!=='object')throw new Error('project required');
   if(job.status!=='failed')throw new Error('only failed projects can be retried');
