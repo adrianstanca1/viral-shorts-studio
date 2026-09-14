@@ -19,7 +19,7 @@ export class FreeRouter {
     const current=this.state.openrouter||{};
     const fingerprint=key?crypto.createHash('sha256').update(key).digest('hex'):null;
     const state=current.fingerprint===fingerprint?current:{};
-    return {configured:!!key,enabled:!!key&&this.env.OPENROUTER_ENABLED==='true',models:this.models(),freeOnly:true,paidFallback:false,status:state.status||'not-verified',lastCheckedAt:state.lastCheckedAt||null,nextRetryAt:state.until?new Date(state.until).toISOString():null,active:this.active};
+    return {configured:!!key,enabled:!!key&&this.env.OPENROUTER_ENABLED==='true',models:this.models(),verifiedModel:state.model||null,freeOnly:true,paidFallback:false,status:state.status||'not-verified',lastCheckedAt:state.lastCheckedAt||null,nextRetryAt:state.until?new Date(state.until).toISOString():null,active:this.active};
   }
   async complete({messages,target=100,signal,validate}){
     signal?.throwIfAborted();
