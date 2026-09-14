@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 const COOKIE='vss_session';
 export const authConfigured=secret=>String(secret||'').length>=24;
+export function assertLaunchSecurity({publicLaunch=false,secret=''}={}){if(publicLaunch&&!authConfigured(secret))throw new Error('PUBLIC_LAUNCH requires APP_AUTH_SECRET with at least 24 characters');return true;}
 export function ownerSessionToken(secret){return crypto.createHmac('sha256',String(secret)).update('viral-shorts-owner-v1').digest('base64url');}
 export function safeEqual(a,b){const A=Buffer.from(String(a||'')),B=Buffer.from(String(b||''));return A.length===B.length&&A.length>0&&crypto.timingSafeEqual(A,B);}
 function cookies(req){return Object.fromEntries(String(req.headers?.cookie||'').split(';').map(x=>x.trim()).filter(Boolean).map(x=>{const i=x.indexOf('=');return i<0?[x,'']:[x.slice(0,i),decodeURIComponent(x.slice(i+1))]}));}

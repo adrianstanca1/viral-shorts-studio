@@ -13,7 +13,7 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openrouter-catalog.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
-import { authConfigured, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
+import { authConfigured, assertLaunchSecurity, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
 import { recoverProjectState } from './recovery.mjs';
 
 const app = express();
@@ -22,6 +22,8 @@ app.use(securityHeaders);
 app.use(express.json({limit:'2mb'}));
 app.use(express.urlencoded({extended:false,limit:'16kb'}));
 const AUTH_SECRET=process.env.APP_AUTH_SECRET||'';
+const PUBLIC_LAUNCH=['1','true','yes','on'].includes(String(process.env.PUBLIC_LAUNCH||'').toLowerCase());
+assertLaunchSecurity({publicLaunch:PUBLIC_LAUNCH,secret:AUTH_SECRET});
 const WORKER_TOKEN=process.env.PROVIDER_WORKER_TOKEN||'';
 app.get('/login',(req,res)=>{if(!authConfigured(AUTH_SECRET))return res.redirect('/');res.type('html').send(loginPage(req.query.error==='1'));});
 app.post('/api/session',createRateLimiter({windowMs:15*60_000,max:10}),(req,res)=>{if(!authConfigured(AUTH_SECRET))return res.status(409).json({error:'Owner authentication is not configured'});if(!safeEqual(req.body?.password,AUTH_SECRET))return res.redirect('/login?error=1');setOwnerCookie(req,res,AUTH_SECRET);res.redirect('/');});
@@ -76,7 +78,8 @@ app.get('/api/diagnostics',async(req,res)=>{
       {id:'queue',label:'Generation queue',ok:pending<25,detail:`${pending} pending/leased`},
       {id:'worker',label:'Provider worker',ok:workerAgeSeconds===null||workerAgeSeconds<180,detail:workerAgeSeconds===null?'no heartbeat yet':`${workerAgeSeconds}s since heartbeat`},
       {id:'cost-policy',label:'Cost policy',ok:true,detail:'free-only; paid fallback disabled'},
-      {id:'owner-auth',label:'Owner authentication',ok:authConfigured(AUTH_SECRET),detail:authConfigured(AUTH_SECRET)?'configured':'disabled until public launch'},
+      {id:'owner-auth',label:'Owner authentication',ok:authConfigured(AUTH_SECRET)||!PUBLIC_LAUNCH,detail:authConfigured(AUTH_SECRET)?'configured':PUBLIC_LAUNCH?'required but missing':'optional for local-only mode'},
+      {id:'public-launch',label:'Public launch guard',ok:!PUBLIC_LAUNCH||authConfigured(AUTH_SECRET),detail:PUBLIC_LAUNCH?'public mode enabled':'local-only mode'},
       {id:'rate-limit',label:'Write rate limit',ok:true,detail:`${Number(process.env.WRITE_RATE_LIMIT||120)} requests / 5 min`}
     ];
     const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
