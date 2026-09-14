@@ -95,8 +95,10 @@ export function fitNarrationBudget(scenes=[],targetDuration=60){
     }
     remaining-=trimmed.length;
     let narration=trimmed.join(' ').replace(/[,:;]+$/,'');
+    narration=narration.replace(/\s+(?:and|or)\s+the\s+\w+[.!?]?$/i,'').replace(/\s+to\s+the\s+\w+[.!?]?$/i,'').replace(/[,;]?\s+(?:then|including|led)[.!?]?$/i,'').trim();
     if(narration&&!/[.!?]$/.test(narration))narration+='.';
-    return {...scene,narration,pacingBudget:{originalWords:words.length,finalWords:trimmed.length,maxWords:limit,trimmed:trimmed.length<words.length}};
+    const finalWords=narration.split(/\s+/).filter(Boolean).length;
+    return {...scene,narration,pacingBudget:{originalWords:words.length,finalWords,maxWords:limit,trimmed:finalWords<words.length}};
   });
 }
 

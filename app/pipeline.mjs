@@ -524,12 +524,13 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         if(improved){retry.selected.qualityGate=sceneAcceptance(after,plan.beat);scenes[pos]=retry.selected;}
       }catch(error){autoRepairs.push({index,beforeScore:Number(original.candidateScore||0),improved:false,error:String(error?.message||error).slice(0,180)});}
     }
-    let editingRhythm=editingRhythmAnalysis(scenes,storyboard);const editRepairs=[];
-    for(const index of editingRhythm.repairIndexes.slice(0,2)){
+    let editingRhythm=editingRhythmAnalysis(scenes,storyboard);const editRepairs=[],attemptedEditRepairs=new Set();
+    for(let pass=0;pass<4;pass++){
+      const index=(editingRhythm.repairIndexes||[]).find(x=>!attemptedEditRepairs.has(x));if(!index)break;attemptedEditRepairs.add(index);
       const pos=scenes.findIndex(s=>s.index===index),original=scenes[pos],plan=storyboard.find(s=>s.index===index);if(pos<0||!original||!plan)continue;
       const neighborAssets=[...(scenes[pos-1]?.assets||[]),...(scenes[pos+1]?.assets||[])].map(assetKey).filter(Boolean);
       try{
-        const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+29,avoidAssetKeys:neighborAssets};
+        const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+29+pass,avoidAssetKeys:neighborAssets};
         const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);
         const options=[retry.selected];
         if(plan.style!=='whiteboard'&&!['hook','payoff'].includes(plan.beat)){
@@ -542,9 +543,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
           if(!best||trialRhythm.score>best.rhythm.score||(trialRhythm.score===best.rhythm.score&&Number(candidate.candidateScore||0)>Number(best.candidate.candidateScore||0)))best={candidate,gate,rhythm:trialRhythm};
         }
         const improved=!!best&&best.rhythm.score>editingRhythm.score;
-        editRepairs.push({index,beforeScore:editingRhythm.score,afterScore:best?.rhythm.score??editingRhythm.score,beforeVisual:Number(original.candidateScore||0),afterVisual:Number(best?.candidate?.candidateScore||0),afterType:best?.candidate?.visualType||null,improved,reason:'editing-rhythm'});
+        editRepairs.push({index,pass:pass+1,beforeScore:editingRhythm.score,afterScore:best?.rhythm.score??editingRhythm.score,beforeVisual:Number(original.candidateScore||0),afterVisual:Number(best?.candidate?.candidateScore||0),afterType:best?.candidate?.visualType||null,improved,reason:'editing-rhythm'});
         if(improved){best.candidate.qualityGate=best.gate;scenes[pos]=best.candidate;editingRhythm=best.rhythm;}
-      }catch(error){editRepairs.push({index,beforeScore:editingRhythm.score,improved:false,error:String(error?.message||error).slice(0,180)});}
+      }catch(error){editRepairs.push({index,pass:pass+1,beforeScore:editingRhythm.score,improved:false,error:String(error?.message||error).slice(0,180)});}
     }
     update({scenes:[...scenes].sort((a,b)=>a.index-b.index),autoRepairs,editRepairs,editingRhythm});
     stageMetric(metrics,'sceneRenderSeconds',sceneStarted);
