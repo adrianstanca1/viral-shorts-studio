@@ -1,6 +1,25 @@
 import fs from 'node:fs';
 
 const terminal=new Set(['complete','failed','queued']);
+
+export function inferFailureStage(job={}){
+  if(job.failedStage)return String(job.failedStage);
+  const error=String(job.error||'').toLowerCase(),progress=Number(job.progress||0);
+  if(/ffmpeg|ffprobe|assembl|codec|swscaler|audio|caption/.test(error))return progress>=85?'assembling':'generating-scenes';
+  if(/commons|asset|media|image|video/.test(error))return 'generating-scenes';
+  if(/source|research|wikipedia|tavily/.test(error))return 'research';
+  if(/storyboard|script|narration|hook/.test(error))return 'storyboarding';
+  if(progress>=90)return 'assembling';
+  if(progress>=25)return 'generating-scenes';
+  if(progress>=10)return 'storyboarding';
+  return 'queued';
+}
+
+export function failureIsRecent(item={},hours=2,{now=Date.now}={}){
+  const at=Date.parse(item.failedAt||item.updatedAt||item.createdAt||'');
+  if(!Number.isFinite(at))return false;
+  return now()-at<=Math.max(1,Number(hours||2))*3600000;
+}
 export function recoverProjectState(job,{exists=fs.existsSync,now=()=>new Date().toISOString()}={}){
   if(!job||typeof job!=='object')return {changed:false,job};
   const prior=String(job.status||'queued');

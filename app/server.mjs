@@ -14,7 +14,7 @@ import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openr
 import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
 import { authConfigured, assertLaunchSecurity, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
-import { recoverProjectState, prepareProjectRetry } from './recovery.mjs';
+import { recoverProjectState, prepareProjectRetry, inferFailureStage, failureIsRecent } from './recovery.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -71,7 +71,8 @@ app.get('/api/diagnostics',async(req,res)=>{
     const st=fs.statfsSync(DATA),freeBytes=Number(st.bavail)*Number(st.bsize),totalBytes=Number(st.blocks)*Number(st.bsize),freePercent=totalBytes?Number((100*freeBytes/totalBytes).toFixed(1)):0;
     const text=await textProviderStatus(),local=text.providers?.find(p=>p.id==='ollama-local');
     const jobsState=providerJobStatus(DATA),pending=(jobsState.counts?.pending||0)+(jobsState.counts?.leased||0),providerFailures=(jobsState.counts?.failed||0)+(jobsState.counts?.expired||0);
-    const recentProjectFailures=list().filter(x=>x.status==='failed').slice(0,5).map(x=>({id:x.id,topic:x.topic,stage:x.failedStage||null,error:String(x.error||'').slice(0,240),failedAt:x.failedAt||null,retryCount:Number(x.retryCount||0)}));
+    const allProviderFailures=listProviderJobs(DATA).filter(x=>['failed','expired'].includes(x.status)),recentProviderFailures=allProviderFailures.filter(x=>failureIsRecent(x,2)).length;
+    const failedProjects=list().filter(x=>x.status==='failed'),recentProjectFailures=failedProjects.filter(x=>failureIsRecent(x,2)).slice(0,5).map(x=>({id:x.id,topic:x.topic,stage:x.failedStage||inferFailureStage(x),error:String(x.error||'').slice(0,240),failedAt:x.failedAt||null,retryCount:Number(x.retryCount||0)}));
     const workerFile=path.join(DATA,'provider-worker-status.json');let workerAgeSeconds=null;try{workerAgeSeconds=Math.max(0,Math.round((Date.now()-fs.statSync(workerFile).mtimeMs)/1000));}catch{}
     const checks=[
       {id:'storage',label:'Storage',ok:freePercent>=10,detail:`${(freeBytes/1073741824).toFixed(1)} GB free`},
@@ -84,7 +85,7 @@ app.get('/api/diagnostics',async(req,res)=>{
       {id:'rate-limit',label:'Write rate limit',ok:true,detail:`${Number(process.env.WRITE_RATE_LIMIT||120)} requests / 5 min`}
     ];
     const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
-    res.json({status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending,providerFailures},recentProjectFailures,activeProject:active,shuttingDown,generatedAt:new Date().toISOString()});
+    res.json({status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending,recentProviderFailures,historicalProviderFailures:providerFailures},failureSummary:{recentProjects:recentProjectFailures.length,historicalProjects:failedProjects.length},recentProjectFailures,activeProject:active,shuttingDown,generatedAt:new Date().toISOString()});
   }catch(e){res.status(500).json({status:'degraded',error:'diagnostics unavailable'});}
 });
 
@@ -266,7 +267,7 @@ app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if
 app.get('/api/projects/:id/export',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});res.setHeader('Content-Disposition',`attachment; filename="${downloadName(j,'project.json')}"`);res.json(publicExport(j));});
 app.delete('/api/projects/:id',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});const providerJobsDeleted=deleteProviderJobsForProject(DATA,j.id),aiInboxDeleted=deleteAiCandidatesForProject(DATA,j.id);jobs.delete(j.id);fs.rmSync(projectDir(j.id),{recursive:true,force:true});res.json({deleted:true,id:j.id,providerJobsDeleted,aiInboxDeleted});});
 
-for(const job of list()){const recovered=recoverProjectState(job);if(recovered.changed)save(job);}
+for(const job of list()){let changed=false;if(job.status==='failed'&&!job.failedStage){job.failedStage=inferFailureStage(job);changed=true;}const recovered=recoverProjectState(job);if(recovered.changed||changed)save(job);}
 reconcileProviderJobs(DATA);verifyProviders(DATA).catch(()=>{});refreshOpenRouterFreeCatalog().catch(()=>{});setInterval(()=>reconcileProviderJobs(DATA),30000).unref();setInterval(()=>verifyProviders(DATA).catch(()=>{}),15*60*1000).unref();setInterval(()=>refreshOpenRouterFreeCatalog().catch(()=>{}),30*60*1000).unref();
 setInterval(()=>{if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});},60000).unref();
 setImmediate(()=>{kick();if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});});

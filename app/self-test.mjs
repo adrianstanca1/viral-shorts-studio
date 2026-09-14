@@ -11,11 +11,12 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
-import { recoverProjectState, prepareProjectRetry } from './recovery.mjs';
+import { recoverProjectState, prepareProjectRetry, inferFailureStage, failureIsRecent } from './recovery.mjs';
 import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
 import { authConfigured, assertLaunchSecurity, ownerSessionToken, safeEqual } from './security.mjs';
 
 
+assert.equal(inferFailureStage({progress:65,error:'No Commons images found for scene 5'}),'generating-scenes');assert.equal(inferFailureStage({progress:90,error:'ffmpeg exited 1 while assembling'}),'assembling');assert.equal(failureIsRecent({failedAt:'2026-01-01T11:00:00.000Z'},2,{now:()=>Date.parse('2026-01-01T12:00:00.000Z')}),true);assert.equal(failureIsRecent({failedAt:'2026-01-01T08:00:00.000Z'},2,{now:()=>Date.parse('2026-01-01T12:00:00.000Z')}),false);
 assert.equal(authConfigured('short'),false);assert.equal(authConfigured('123456789012345678901234'),true);assert.ok(ownerSessionToken('123456789012345678901234').length>20);assert.equal(safeEqual('same','same'),true);assert.equal(safeEqual('same','different'),false);assert.equal(assertLaunchSecurity({publicLaunch:false,secret:''}),true);assert.throws(()=>assertLaunchSecurity({publicLaunch:true,secret:'short'}));assert.equal(assertLaunchSecurity({publicLaunch:true,secret:'123456789012345678901234'}),true);
 const retryState={status:'failed',progress:72,error:'legacy failure',failedAt:'2026-01-01T00:00:00.000Z',failedStage:'generating-scenes'};
 prepareProjectRetry(retryState,{now:()=> '2026-01-02T00:00:00.000Z'});assert.equal(retryState.status,'queued');assert.equal(retryState.progress,0);assert.equal(retryState.retryCount,1);assert.equal(retryState.lastFailure.error,'legacy failure');assert.equal(retryState.failureHistory.length,1);assert.equal(retryState.failedStage,undefined);assert.equal(retryState.error,undefined);
