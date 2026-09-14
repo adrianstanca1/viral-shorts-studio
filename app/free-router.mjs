@@ -46,12 +46,13 @@ export class FreeRouter {
           });
           if(!r.ok){
             await r.body?.cancel();
-            if([401,403,402,429].includes(r.status)){
+            if([401,402,429].includes(r.status)){
               const retry=r.headers.get('retry-after');const seconds=Number(retry);
               const retryMs=retry?(Number.isFinite(seconds)?seconds*1000:Date.parse(retry)-this.now()):0;
               this.state.openrouter={fingerprint,status:r.status===429?'rate-limited':r.status===402?'quota-exhausted':'authentication-rejected',lastCheckedAt:new Date(this.now()).toISOString(),until:this.now()+Math.max(60000,Number.isFinite(retryMs)?retryMs:0,r.status===429?60000:3600000)};this.save();
               throw new Error('PROVIDER_BLOCKED');
             }
+            if(r.status===403)throw new Error('MODEL_FORBIDDEN');
             throw new Error('MODEL_UNAVAILABLE');
           }
           let bytes=0;const chunks=[];
