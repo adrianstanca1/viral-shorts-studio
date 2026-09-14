@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, providerJobStatus } from './provider-job-router.mjs';
 import { buildAiGenerationPlan } from './ai-generation-manager.mjs';
 import { isPublicHttps } from './url-safety.mjs';
+import { recordFreeEvidence, providerEvidence } from './provider-verifier.mjs';
 import { registerLocalAiCandidate } from './ai-candidate-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
 
@@ -31,6 +32,7 @@ const assetDir=path.join(root,'provider-assets','huggingface');fs.mkdirSync(asse
 const local=registerLocalAiCandidate(root,'p-local',1,{provider:'huggingface',kind:'image',localFile:asset,verifiedFree:true,jobId:'local1'});assert.equal(local.localFile,asset);
 assert.throws(()=>registerLocalAiCandidate(root,'p-local',2,{provider:'huggingface',kind:'image',localFile:'/tmp/nope.jpg',verifiedFree:true}));
 const inv=providerWorkerInventory();assert.equal(inv.find(x=>x.id==='higgsfield').connectorOnly,true);
+const ev=recordFreeEvidence(root,{provider:'higgsfield',remaining:1,zeroCost:true,source:'test',evidence:'free allowance'});assert.equal(ev.zeroCostVerified,true);assert.equal(providerEvidence(root,'higgsfield').remaining,1);
 const project={storyboard:[{index:1,beat:'hook',durationHint:4},{index:2,beat:'context',durationHint:4},{index:3,beat:'payoff',durationHint:4}],scenes:[{index:1,candidateScore:60},{index:2,candidateScore:90},{index:3,candidateScore:70}]};
 const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,provider:'higgsfield'});
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);

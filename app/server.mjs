@@ -10,6 +10,7 @@ import { buildAiGenerationPlan, summarizeAiPlan } from './ai-generation-manager.
 import { registerAiCandidate, registerLocalAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, claimProviderJobs, releaseProviderJob, reconcileProviderJobs } from './provider-job-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
+import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
 
 const app = express();
 app.use(express.json({limit:'2mb'}));
@@ -52,6 +53,9 @@ app.get('/api/capabilities',(req,res)=>res.json({
 
 
 app.get('/api/provider-worker/status',(req,res)=>{const f=path.join(DATA,'provider-worker-status.json');if(!fs.existsSync(f))return res.json({state:'offline'});try{res.json(JSON.parse(fs.readFileSync(f,'utf8')))}catch{res.json({state:'invalid'})}});
+app.get('/api/provider-verification',(req,res)=>res.json({state:readVerification(DATA),worker:providerWorkerInventory(DATA)}));
+app.post('/api/provider-verification/check',async(req,res)=>{try{res.json(await verifyProviders(DATA))}catch(e){res.status(500).json({error:String(e.message||e)})}});
+app.post('/api/provider-verification/evidence',(req,res)=>{try{if(!process.env.PROVIDER_WORKER_TOKEN||req.get('x-provider-worker-token')!==process.env.PROVIDER_WORKER_TOKEN)return res.status(403).json({error:'forbidden'});res.json(recordFreeEvidence(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/provider-jobs',(req,res)=>{const status=String(req.query.status||'').trim(),provider=String(req.query.provider||'').trim().toLowerCase(),projectId=String(req.query.projectId||'').trim();res.json({...providerJobStatus(DATA),jobs:listProviderJobs(DATA,{status,provider,projectId}).slice(0,100)});});
 app.get('/api/provider-jobs/:id',(req,res)=>{const j=getProviderJob(DATA,req.params.id);if(!j)return res.status(404).json({error:'not found'});res.json(j)});
 app.post('/api/provider-jobs/claim',(req,res)=>{try{res.json({jobs:claimProviderJobs(DATA,req.body||{})})}catch(e){res.status(400).json({error:String(e.message||e)})}});
@@ -197,6 +201,6 @@ app.get('/api/projects/:id/video',(req,res)=>{ const j=load(req.params.id); if(!
 app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.credits||!fs.existsSync(j.render.credits)) return res.status(404).json({error:'credits not ready'}); res.sendFile(j.render.credits); });
 
 for(const job of list()){if(!['complete','failed','queued'].includes(job.status)){job.status='failed';job.error='Interrupted by restart; retry resumes completed scenes';save(job);}}
-reconcileProviderJobs(DATA);setInterval(()=>reconcileProviderJobs(DATA),30000).unref();
+reconcileProviderJobs(DATA);verifyProviders(DATA).catch(()=>{});setInterval(()=>reconcileProviderJobs(DATA),30000).unref();setInterval(()=>verifyProviders(DATA).catch(()=>{}),15*60*1000).unref();
 setImmediate(kick);
 app.listen(PORT,'0.0.0.0',()=>console.log(`Viral Shorts Studio listening on ${PORT}`));

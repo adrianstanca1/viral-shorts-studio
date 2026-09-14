@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { providerEvidence } from './provider-verifier.mjs';
 
 const truthy=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 const safeName=s=>String(s||'asset').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120);
@@ -10,11 +11,13 @@ function providerConfig(id){
   return {enabled:false,verifiedFree:false,kind:null};
 }
 
-export function providerWorkerInventory(){
+export function providerWorkerInventory(root=process.env.DATA_DIR||'/app/data'){
   return ['huggingface','nvidia','higgsfield','fal','external'].map(id=>{
-    const c=providerConfig(id);
+    const c=providerConfig(id),e=providerEvidence(root,id);
     const connectorOnly=id==='higgsfield';
-    return {id,enabled:!!c.enabled,verifiedFree:!!c.verifiedFree,executable:!!(c.enabled&&c.verifiedFree&&c.token&&(id!=='nvidia'||c.endpoint)),connectorOnly};
+    const verifiedFree=!!(c.verifiedFree||e?.zeroCostVerified);
+    const enabled=!!(c.enabled||e?.active);
+    return {id,enabled,verifiedFree,authenticated:e?.authenticated??null,remaining:Number(e?.remaining||0),executable:!!(enabled&&verifiedFree&&c.token&&(id!=='nvidia'||c.endpoint)),connectorOnly,verificationSource:e?.source||null};
   });
 }
 async function saveResponse(r,dest){
@@ -40,8 +43,9 @@ async function nvidia(job,outDir,c){
 }
 
 export async function executeProviderJob(job,outDir){
-  const c=providerConfig(job.provider);
-  if(!c.enabled||!c.verifiedFree)throw Object.assign(new Error('provider is not verified-free/enabled'),{retryable:false});
+  const c=providerConfig(job.provider),e=providerEvidence(process.env.DATA_DIR||'/app/data',job.provider);
+  const enabled=!!(c.enabled||e?.active),verifiedFree=!!(c.verifiedFree||e?.zeroCostVerified);
+  if(!enabled||!verifiedFree)throw Object.assign(new Error('provider is not verified-free/enabled'),{retryable:false});
   if(!c.token)throw Object.assign(new Error('provider credential unavailable'),{retryable:false});
   fs.mkdirSync(outDir,{recursive:true});
   if(job.provider==='huggingface')return {file:await huggingface(job,outDir,c),kind:'image',provider:job.provider,model:c.model};

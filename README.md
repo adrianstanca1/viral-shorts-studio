@@ -66,3 +66,6 @@ Provider jobs now support priority scheduling, worker leases, safe release/retry
 
 ### Autonomous provider worker
 The Docker stack includes an isolated `provider-worker` service that claims only providers explicitly marked both enabled and verified-free. Direct Hugging Face and NVIDIA image adapters are implemented but remain disabled until zero-cost generation is explicitly verified. Generated media is stored in the shared private volume, registered as a trusted local AI candidate, scored against archive/whiteboard candidates, and can trigger scene-only re-rendering. Higgsfield remains connector-only because the VPS does not have a verified no-charge direct API path.
+
+### Zero-cost provider verification
+The studio maintains `/app/data/provider-verification.json` as a runtime evidence ledger. Authentication checks for Hugging Face and NVIDIA run on startup and every 15 minutes, but authentication alone never enables generation. A provider is promoted only when there is explicit zero-cost evidence with remaining allowance. Higgsfield connector allowances can be recorded through the protected evidence endpoint; connector-only providers remain non-executable on the VPS. `GET /api/provider-verification` exposes the current evidence and worker eligibility without revealing credentials.
