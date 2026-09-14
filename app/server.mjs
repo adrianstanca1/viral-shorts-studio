@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { produceProject, mediaProviderStatus } from './pipeline.mjs';
 import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
+import { registerAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
 
 const app = express();
 app.use(express.json({limit:'2mb'}));
@@ -38,13 +39,24 @@ app.get('/api/stats',(req,res)=>{
 });
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
-  stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
+  stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','verified-free-ai-candidates','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
   formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes'],
   styles,
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],
   optionalProviders:['Pexels','Pixabay','OpenRouter','Tavily','fal.ai','future image-to-video adapters'],
   policy:['cite sources','preserve asset credits','approval before publishing','do not fabricate real-crime claims']
 }));
+
+app.get('/api/projects/:id/ai-candidates',(req,res)=>{
+  const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
+  const out={status:aiCandidateStatus(DATA,j.id),scenes:{}};
+  for(const scene of j.storyboard||[])out.scenes[String(scene.index)]=listAiCandidates(DATA,j.id,scene.index);
+  res.json(out);
+});
+app.post('/api/projects/:id/scenes/:index/ai-candidates',(req,res)=>{
+  const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
+  try{const item=registerAiCandidate(DATA,j.id,Number(req.params.index),req.body||{});res.status(201).json(item);}catch(e){res.status(400).json({error:String(e.message||e)});}
+});
 
 app.post('/api/projects',(req,res)=>{
   const body=req.body||{};

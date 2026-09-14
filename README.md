@@ -43,3 +43,6 @@ Each completed storyboard now produces `generation-prompts.json` plus `generativ
 ## Hybrid visual director
 
 The `hybrid` style automatically produces archival/motion and whiteboard candidates for key scenes, scores them using relevance, licensing, motion and beat suitability, then selects the strongest version while preserving alternatives in scene variant history. This gives visual variety without requiring a paid generative provider.
+
+### Verified-free AI candidate bridge
+External generation connectors can register a completed HTTPS image/video against a scene through the local API. Only records explicitly marked `verifiedFree: true` are accepted. Imported AI candidates are rendered with the scene narration/overlay and scored alongside archive-motion and whiteboard alternatives. Higgsfield, NVIDIA, Hugging Face and fal remain disabled for autonomous paid-capable calls until a no-charge path is verified per job.
