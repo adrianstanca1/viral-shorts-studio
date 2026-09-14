@@ -73,3 +73,6 @@ The studio maintains `/app/data/provider-verification.json` as a runtime evidenc
 ### Automatic verified-free routing
 
 The studio now chooses cloud providers from the live zero-cost verification ledger instead of a hard-coded provider. Active pending/leased jobs reserve free allowance so the system cannot oversubscribe a one-generation grant. Evidence expires automatically, direct adapters only activate while current zero-cost evidence remains valid, and successful direct jobs decrement the tracked allowance. Completed projects are revisited periodically so newly available verified-free capacity can enhance eligible scenes automatically without paid fallback.
+
+### Ollama local + cloud and Hugging Face cloud
+Text routing now supports both local Ollama models and Ollama Cloud through the same studio router. Local Qwen remains first priority. Ollama Cloud is available as `ollama-cloud` when a valid cloud API key is configured; it fails closed on authentication errors. Hugging Face Inference Providers are also supported as a guarded cloud text fallback with a configurable daily call cap. HF routed inference uses monthly free credits and is therefore disabled by default if the account has no usable free credit. Neither route can silently become a paid fallback.
