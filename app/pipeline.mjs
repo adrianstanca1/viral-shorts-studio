@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { writeGenerationQueue, generativeStatus } from './generative-router.mjs';
 import { listAiCandidates } from './ai-candidate-router.mjs';
-import { rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, optimizePacing } from './content-quality.mjs';
+import { rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing } from './content-quality.mjs';
 
 const UA = 'ViralShortsStudio/0.2 (self-hosted creator tool)';
 const mediaBreakers=new Map();
@@ -387,7 +387,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
         const compactSources=sources.map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,900)}));
         const completion=await completeText({task:'storyboard',quality:['true-crime','fact-check'].includes(project.niche)?'strong':'balanced',target:count*55,validate,messages:[
-          {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. Keep each narration concise at 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'},
+          {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. For 30-second videos keep each narration 8-12 words; otherwise 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'},
           {role:'user',content:JSON.stringify({topic:project.topic,sceneCount:count,sources:compactSources})}
         ]});
         const text=completion.text; const ai=JSON.parse(text).map((x,i)=>({...x,sourceIndex:Number.isInteger(x.sourceIndex)&&sources[x.sourceIndex]?x.sourceIndex:i%sources.length,narration:String(x.narration||'').trim().slice(0,420),overlay:String(x.overlay||x.narration||'').trim().slice(0,95)}));storyboard=storyboard.map((scene,i)=>({...scene,...ai[i]}));
@@ -397,6 +397,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
       }
     }
+    storyboard=fitNarrationBudget(storyboard,Number(project.duration));
     storyboard=optimizePacing(storyboard,Number(project.duration));
     update({storyboard,pacingOptimized:true});
     const mediaStarted=nowMs();
@@ -414,7 +415,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     update({storyboard,generationPlan,generativeQueue:{file:generativeQueue.file,requestCount:generativeQueue.queue.requests.length,status:generativeStatus()},mediaCacheHit:mediaCached.cacheHit,mediaPool:mediaPool.map(({url,...m})=>m),videoPool:videoPool.map(({url,...m})=>m),progress:25,status:'generating-scenes',metrics});
     const sceneStarted=nowMs();
     const results=new Array(storyboard.length); let completed=0;
-    const previousByIndex=new Map((project.scenes||[]).filter(s=>s.file&&fs.existsSync(s.file)).map(s=>[s.index,s]));
+    const previousByIndex=new Map((project.scenes||[]).filter(s=>{const plan=storyboard.find(x=>x.index===s.index);return s.file&&fs.existsSync(s.file)&&plan&&Math.abs(Number(s.duration||0)-Number(plan.durationHint||0))<=0.15&&String(s.narration||'').trim()===String(plan.narration||'').trim();}).map(s=>[s.index,s]));
     const importantPoints=storyboard.length>=18?[1,Math.ceil(storyboard.length*.25),Math.ceil(storyboard.length*.5),Math.ceil(storyboard.length*.75),storyboard.length]:storyboard.length>=12?[1,Math.ceil(storyboard.length/3),Math.ceil(storyboard.length*2/3),storyboard.length]:[1,Math.ceil(storyboard.length/2),storyboard.length];
     const importantIndexes=new Set(importantPoints);
     const autoCandidateCount=project.autoCandidates===false?1:clamp(Number(project.candidateCount||3),1,4);
@@ -473,11 +474,13 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const sourceCount=sources.length;
     const sceneQuality=scenes.map(s=>({index:s.index,score:Number(s.candidateScore||0),gate:s.qualityGate||sceneAcceptance(s.candidateScore,storyboard.find(x=>x.index===s.index)?.beat)}));
     const acceptedScenes=sceneQuality.filter(x=>x.gate.accepted).length;
-    const viralityScore=Math.round(clamp(55+(scenes.length>=6?10:0)+(sourceCount>=5?8:0)+(realVideoScenes*3)+(Math.abs(durationDelta)<=0.5?12:0),0,100));
+    const retention=retentionAnalysis(scenes);
+    const retentionReady=retention.score>=72&&retention.highRiskScenes.length<=Math.max(1,Math.floor(scenes.length*.2));
+    const viralityScore=Math.round(clamp(50+(scenes.length>=6?8:0)+(sourceCount>=5?7:0)+(realVideoScenes*3)+(Math.abs(durationDelta)<=0.5?10:0)+(retention.score>=80?12:retention.score>=70?7:0),0,100));
     const slug=project.topic.replace(/[^a-z0-9 ]/gi,' ').trim();
     const publish={title:`${slug}: the part most people miss`.slice(0,90),description:`A fast, source-backed ${project.niche.replace('-', ' ')} short about ${slug}. Verify claims using the included credits before publishing.`,hashtags:['#shorts',`#${project.niche.replace(/-/g,'')}`,'#storytelling']};
     stageMetric(metrics,'totalSeconds',totalStarted);
-    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75);
+    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady;
     update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){

@@ -42,6 +42,24 @@ export function sceneAcceptance(score,beat='context'){
 }
 
 
+
+export function fitNarrationBudget(scenes=[],targetDuration=60){
+  if(!scenes.length)return [];
+  const totalBudget=Math.max(scenes.length*7,Math.floor(Number(targetDuration||60)*3.35));
+  const base=Math.max(7,Math.floor(totalBudget/scenes.length));
+  let remaining=totalBudget;
+  return scenes.map((scene,i)=>{
+    const left=scenes.length-i, words=clean(scene.narration).split(/\s+/).filter(Boolean);
+    const preferred=Math.min(Number(targetDuration)<=30?12:14,base+(['hook','payoff'].includes(scene.beat)?1:0));
+    const reserve=Math.max(0,(left-1)*7),limit=Math.max(7,Math.min(preferred,remaining-reserve));
+    const trimmed=words.length>limit?words.slice(0,limit):words;
+    remaining-=trimmed.length;
+    let narration=trimmed.join(' ').replace(/[,:;]+$/,'');
+    if(narration&&!/[.!?]$/.test(narration))narration+='.';
+    return {...scene,narration,pacingBudget:{originalWords:words.length,finalWords:trimmed.length,maxWords:limit,trimmed:trimmed.length<words.length}};
+  });
+}
+
 export function optimizePacing(scenes=[],targetDuration=60){
   if(!scenes.length)return [];
   const target=Math.max(scenes.length*2.2,Number(targetDuration)||60);

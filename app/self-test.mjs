@@ -11,7 +11,7 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
-import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, optimizePacing } from './content-quality.mjs';
+import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing } from './content-quality.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
 const sampleSources=[{title:'Great Smog of London',url:'https://example.com/1',extract:'The Great Smog of London occurred in December 1952 and caused thousands of deaths.',provider:'wikipedia'},{title:'Unrelated',url:'https://example.com/2',extract:'A short generic sentence about another topic.',provider:'web'}];
@@ -58,5 +58,7 @@ const captionText=fs.readFileSync(captionFile,'utf8');assert.match(captionText,/
 fs.rmSync(root,{recursive:true,force:true});
 console.log('self-test: ok');
 
+
+const budgeted=fitNarrationBudget([{index:1,beat:'hook',narration:'But this deliberately long narration contains far too many words for a very short opening scene and needs trimming.'},{index:2,beat:'payoff',narration:'So the final consequence became clear after policy changed across London and beyond.'}],8);assert.ok(budgeted.every(x=>x.pacingBudget.finalWords<=x.pacingBudget.maxWords));assert.ok(budgeted.some(x=>x.pacingBudget.trimmed));
 const retention=retentionAnalysis([{index:1,beat:'hook',narration:'But one hidden detail changed how London responded.',duration:3},{index:2,beat:'payoff',narration:'So the disaster ultimately changed clean air policy.',duration:3}]);assert.ok(retention.score>=70);
 const paced=optimizePacing([{index:1,beat:'hook',narration:'But one hidden detail changed how London responded.'},{index:2,beat:'context',narration:'The dense polluted air remained over the city for several dangerous days.'}],8);assert.equal(paced.length,2);assert.ok(Math.abs(paced.reduce((n,x)=>n+x.durationHint,0)-8)<0.05);assert.ok(paced.every(x=>x.pacing.plannedWordsPerSecond>0));
