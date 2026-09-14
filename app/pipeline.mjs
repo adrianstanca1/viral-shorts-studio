@@ -243,6 +243,16 @@ function wrapOverlay(s,max=28){
   if(line) lines.push(line); return lines.slice(0,3).join('\n');
 }
 
+export function repairTargetIndexes(storyboard=[],scenes=[],maxRepairs=3){
+  const retention=retentionAnalysis(scenes), risky=new Set(retention.highRiskScenes||[]);
+  const ranked=scenes.map(s=>{
+    const plan=storyboard.find(x=>x.index===s.index)||{}, gate=sceneAcceptance(s.candidateScore,plan.beat);
+    const priority=(gate.accepted?0:50)+(risky.has(s.index)?25:0)+(['hook','payoff','evidence'].includes(plan.beat)?10:0)+(100-Number(s.candidateScore||0))/10;
+    return {index:s.index,priority,needsRepair:!gate.accepted||risky.has(s.index)};
+  }).filter(x=>x.needsRepair).sort((a,b)=>b.priority-a.priority||a.index-b.index);
+  return ranked.slice(0,Math.max(0,Number(maxRepairs)||0)).map(x=>x.index);
+}
+
 export function candidateScore(result,scene){
   const assets=result.assets||[];
   const titles=new Set(assets.map(a=>String(a.title||'').toLowerCase()));
@@ -465,6 +475,21 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const worker=async()=>{while(true){const i=cursor++;if(i>=storyboard.length)return;results[i]=await renderOne(storyboard[i]);completed++;update({scenes:results.filter(Boolean).sort((a,b)=>a.index-b.index),progress:25+Math.round(60*completed/storyboard.length),metrics});}};
     await Promise.all(Array.from({length:workerCount},worker));
     const scenes=results;
+    const repairIndexes=repairTargetIndexes(storyboard,scenes,Math.min(3,Math.ceil(storyboard.length*.2)));
+    const autoRepairs=[];
+    for(const index of repairIndexes){
+      const pos=scenes.findIndex(s=>s.index===index), original=scenes[pos], plan=storyboard.find(s=>s.index===index);
+      if(pos<0||!original||!plan)continue;
+      try{
+        const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+17};
+        const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);
+        const before=Number(original.candidateScore||0), after=Number(retry.selected?.candidateScore||0);
+        const improved=after>before;
+        autoRepairs.push({index,beforeScore:before,afterScore:after,improved,reason:sceneAcceptance(before,plan.beat).accepted?'retention-risk':'quality-gate'});
+        if(improved){retry.selected.qualityGate=sceneAcceptance(after,plan.beat);scenes[pos]=retry.selected;}
+      }catch(error){autoRepairs.push({index,beforeScore:Number(original.candidateScore||0),improved:false,error:String(error?.message||error).slice(0,180)});}
+    }
+    update({scenes:[...scenes].sort((a,b)=>a.index-b.index),autoRepairs});
     stageMetric(metrics,'sceneRenderSeconds',sceneStarted);
     update({status:'assembling',progress:90});
     const concat=path.join(dir,'final-list.txt');
