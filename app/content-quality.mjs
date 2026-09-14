@@ -41,6 +41,26 @@ export function sceneAcceptance(score,beat='context'){
   return {score:Number(score||0),threshold,accepted:Number(score||0)>=threshold};
 }
 
+
+export function optimizePacing(scenes=[],targetDuration=60){
+  if(!scenes.length)return [];
+  const target=Math.max(scenes.length*2.2,Number(targetDuration)||60);
+  const desired=scenes.map(s=>{
+    const words=clean(s.narration).split(/\s+/).filter(Boolean).length;
+    const beatBoost=['hook','payoff'].includes(s.beat)?0.25:0;
+    return Math.max(2.2,Math.min(7.5,words/2.75+beatBoost));
+  });
+  const scale=target/desired.reduce((a,b)=>a+b,0);
+  let durations=desired.map(x=>Math.max(2.2,Math.min(8.5,x*scale)));
+  const sum=durations.reduce((a,b)=>a+b,0);
+  if(sum>0){const correction=target/sum;durations=durations.map(x=>x*correction);}
+  return scenes.map((s,i)=>{
+    const durationHint=Number(durations[i].toFixed(2));
+    const words=clean(s.narration).split(/\s+/).filter(Boolean).length;
+    return {...s,durationHint,pacing:{words,targetWordsPerSecond:2.75,plannedWordsPerSecond:Number((words/durationHint).toFixed(2))}};
+  });
+}
+
 export function retentionAnalysis(scenes=[]){
   const rows=scenes.map((s,i)=>{
     const words=clean(s.narration).split(/\s+/).filter(Boolean).length,duration=Math.max(.1,Number(s.duration||s.durationHint||1));

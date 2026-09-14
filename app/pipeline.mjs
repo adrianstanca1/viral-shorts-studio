@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { writeGenerationQueue, generativeStatus } from './generative-router.mjs';
 import { listAiCandidates } from './ai-candidate-router.mjs';
-import { rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis } from './content-quality.mjs';
+import { rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, optimizePacing } from './content-quality.mjs';
 
 const UA = 'ViralShortsStudio/0.2 (self-hosted creator tool)';
 const mediaBreakers=new Map();
@@ -397,6 +397,8 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
       }
     }
+    storyboard=optimizePacing(storyboard,Number(project.duration));
+    update({storyboard,pacingOptimized:true});
     const mediaStarted=nowMs();
     const cacheKey=`${project.topic}|media-v2`;
     const mediaCached=await cachedJson(root,'media',cacheKey,12*60*60*1000,async()=>{
