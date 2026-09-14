@@ -5,6 +5,10 @@ import { listProviderJobs } from './provider-job-router.mjs';
 const kindFor=id=>id==='higgsfield'?'video':'image';
 const rank={huggingface:30,nvidia:28,higgsfield:20,fal:10,external:1};
 
+export function canQueueFreeProvider(route={}){
+  return !!route?.verifiedFree && !!route?.executable && !route?.connectorOnly && Number(route?.remaining??route?.availableRemaining??0)>0;
+}
+
 export function chooseFreeProvider(root,requested='auto'){
   const state=readVerification(root),inv=providerWorkerInventory(root),activeJobs=listProviderJobs(root).filter(x=>['pending','leased'].includes(x.status));
   const rows=inv.map(x=>{const reserved=activeJobs.filter(j=>j.provider===x.id).length;return {...x,evidence:state.providers?.[x.id]||null,kind:kindFor(x.id),reserved,availableRemaining:Math.max(0,Number(x.remaining||0)-reserved)};});

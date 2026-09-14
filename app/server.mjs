@@ -11,7 +11,7 @@ import { registerAiCandidate, registerLocalAiCandidate, listAiCandidates, aiCand
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, claimProviderJobs, releaseProviderJob, reconcileProviderJobs } from './provider-job-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
 import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openrouter-catalog.mjs';
-import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
+import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
 import { authConfigured, assertLaunchSecurity, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
 import { recoverProjectState } from './recovery.mjs';
@@ -57,7 +57,7 @@ async function maybeAutoCloudPlan(id){
   const j=load(id);if(!j||j.status!=='complete'||!j.render?.file||!fs.existsSync(j.render.file))return;
   const stamp=String(Math.round(fs.statSync(j.render.file).mtimeMs));if(j.aiAutoPlanRenderStamp===stamp)return;
   const chosen=chooseFreeProvider(DATA,'auto');
-  if(!chosen)return;
+  if(!chosen||!canQueueFreeProvider(chosen))return;
   j.aiAutoPlanRenderStamp=stamp;
   const plan=buildAiGenerationPlan(j,{provider:chosen.id,providerKind:chosen.kind,allowance:Math.min(Number(chosen.remaining||0),4),maxScenes:4,minScore:82});
   const created=[];for(const item of plan.selected){created.push(createProviderJob(DATA,{provider:chosen.id,projectId:j.id,sceneIndex:item.index,kind:chosen.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true,priority:item.priority}))}
@@ -128,6 +128,7 @@ app.post('/api/projects/:id/ai-generation-plan',(req,res)=>{
   if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project must finish before cloud scene planning'});
   const body=req.body||{},opt=freePlanOptions(body,j),plan=buildAiGenerationPlan(j,opt);j.aiGenerationPlan=plan;j.aiFreeAllowance=plan.allowance;save(j);
   if(body.createJobs===true&&plan.provider==='none')return res.status(409).json({error:'No verified-free provider allowance is currently available',plan});
+  if(body.createJobs===true&&!canQueueFreeProvider({...opt,verifiedFree:plan.provider!=='none',remaining:plan.allowance}))return res.status(409).json({error:'Selected free provider is connector-only or not executable by the VPS worker',plan:{...plan,route:{kind:opt.providerKind,connectorOnly:opt.connectorOnly,executable:opt.executable}}});
   const jobsCreated=[];if(body.createJobs===true){for(const item of plan.selected){jobsCreated.push(createProviderJob(DATA,{provider:plan.provider,projectId:j.id,sceneIndex:item.index,kind:opt.providerKind||item.kind,prompt:[item.visualPrompt,item.motionPrompt].filter(Boolean).join(' | '),verifiedFree:true,priority:item.priority}))}}
   res.status(201).json({plan:{...plan,route:{kind:opt.providerKind,connectorOnly:opt.connectorOnly,executable:opt.executable}},summary:summarizeAiPlan(plan),jobs:jobsCreated});
 });

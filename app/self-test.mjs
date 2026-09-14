@@ -10,7 +10,7 @@ import { registerLocalAiCandidate } from './ai-candidate-router.mjs';
 import { providerWorkerInventory } from './provider-adapters.mjs';
 import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
-import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
+import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
 import { recoverProjectState } from './recovery.mjs';
 import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
 import { authConfigured, assertLaunchSecurity, ownerSessionToken, safeEqual } from './security.mjs';
@@ -25,6 +25,7 @@ assert.equal(rankSources('Great Smog London',sampleSources)[0].title,'Great Smog
 assert.ok(Array.isArray(rankFacts('Great Smog London',rankSources('Great Smog London',sampleSources))));
 assert.ok(narrationQuality('But one hidden detail changed how London responded.',{beat:'hook'})>=70);
 assert.equal(sceneAcceptance(80,'hook').accepted,true);assert.equal(sceneAcceptance(60,'context').accepted,false);
+assert.equal(canQueueFreeProvider({verifiedFree:true,executable:true,connectorOnly:false,remaining:1}),true);assert.equal(canQueueFreeProvider({verifiedFree:true,executable:false,connectorOnly:true,remaining:1}),false);assert.equal(canQueueFreeProvider({verifiedFree:true,executable:true,connectorOnly:false,remaining:0}),false);
 assert.ok(Array.isArray(preferredOpenRouterFreeModels(3)));
 const catalog=textModelCatalog();assert.ok(catalog.ollama.length>=3);assert.ok(catalog.huggingface.length>=4);assert.equal(pickCloudModel('ollama',{task:'storyboard',quality:'strong'}),'gpt-oss:120b-cloud');assert.equal(pickCloudModel('huggingface',{task:'storyboard',quality:'balanced'}),'openai/gpt-oss-20b');
 assert.equal(isPublicHttps('https://example.com/a.mp4'),true);
