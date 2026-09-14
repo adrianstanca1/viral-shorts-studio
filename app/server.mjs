@@ -61,16 +61,50 @@ app.post('/api/projects/:id/retry',(req,res)=>{
   j.status='queued';delete j.error;save(j);setImmediate(kick);res.status(202).json(j);
 });
 
+function archiveSceneVariant(j,index){
+  const current=j.scenes?.find(s=>s.index===index);
+  if(!current?.file||!fs.existsSync(current.file))return null;
+  j.sceneVariants ||= {}; const key=String(index); j.sceneVariants[key] ||= [];
+  const existing=j.sceneVariants[key].find(v=>v.sourceFile===current.file); if(existing)return existing;
+  const dir=path.join(projectDir(j.id),'variants',`scene-${String(index).padStart(2,'0')}`); fs.mkdirSync(dir,{recursive:true});
+  const id=crypto.randomUUID(), file=path.join(dir,`${id}.mp4`); fs.copyFileSync(current.file,file);
+  let captions=null; if(current.captions&&fs.existsSync(current.captions)){captions=path.join(dir,`${id}.srt`);fs.copyFileSync(current.captions,captions);}
+  const story=j.storyboard?.find(s=>s.index===index);
+  const variant={id,index,createdAt:new Date().toISOString(),variantSeed:Number(story?.variantSeed||0),duration:current.duration,assets:current.assets||[],hasRealVideo:!!current.hasRealVideo,file,captions,sourceFile:current.file};
+  j.sceneVariants[key].push(variant); return variant;
+}
+
 app.post('/api/projects/:id/scenes/:index/regenerate',(req,res)=>{
   const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'});
   if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});
   const index=Number(req.params.index); const scene=j.storyboard?.find(s=>s.index===index);
   if(!scene)return res.status(404).json({error:'scene not found'});
-  scene.variantSeed=Number(scene.variantSeed||0)+1;
+  archiveSceneVariant(j,index); scene.variantSeed=Number(scene.variantSeed||0)+1;
   const dir=path.join(projectDir(j.id),`scene-${String(index).padStart(2,'0')}`);
   try{fs.rmSync(dir,{recursive:true,force:true});}catch{}
   j.scenes=(j.scenes||[]).filter(s=>s.index!==index); j.status='queued'; j.progress=25; delete j.error; delete j.render;
   save(j); setImmediate(kick); res.status(202).json({id:j.id,scene:index,variantSeed:scene.variantSeed,status:j.status});
+});
+app.get('/api/projects/:id/scenes/:index/variants',(req,res)=>{
+  const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'});
+  const index=Number(req.params.index), variants=j.sceneVariants?.[String(index)]||[];
+  res.json(variants.map(({file,captions,sourceFile,...v})=>v));
+});
+app.get('/api/projects/:id/scenes/:index/variants/:variantId/video',(req,res)=>{
+  const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'});
+  const v=(j.sceneVariants?.[String(Number(req.params.index))]||[]).find(x=>x.id===req.params.variantId);
+  if(!v?.file||!fs.existsSync(v.file))return res.status(404).json({error:'variant video not ready'});
+  res.sendFile(v.file);
+});
+app.post('/api/projects/:id/scenes/:index/variants/:variantId/select',(req,res)=>{
+  const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'});
+  if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});
+  const index=Number(req.params.index), variants=j.sceneVariants?.[String(index)]||[], v=variants.find(x=>x.id===req.params.variantId);
+  if(!v?.file||!fs.existsSync(v.file))return res.status(404).json({error:'variant not found'});
+  archiveSceneVariant(j,index);
+  const selected={index,duration:v.duration,assets:v.assets||[],hasRealVideo:!!v.hasRealVideo,file:v.file,captions:v.captions,variantId:v.id,narration:j.storyboard?.find(s=>s.index===index)?.narration||''};
+  j.scenes=[...(j.scenes||[]).filter(s=>s.index!==index),selected].sort((a,b)=>a.index-b.index); j.status='queued'; j.progress=85; delete j.error; delete j.render;
+  save(j); setImmediate(kick); res.status(202).json({id:j.id,scene:index,variantId:v.id,status:j.status});
 });
 app.get('/api/projects/:id/scenes/:index/video',(req,res)=>{
   const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'});

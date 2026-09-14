@@ -20,3 +20,5 @@ Autonomous mode can run the pipeline, but publishing remains approval-gated by d
 ## Operations
 - `scripts/check-providers.py` verifies configured provider authentication without printing credentials.
 Runtime credentials stay outside Git in `../secrets/`; only non-secret provider status/registry metadata is versioned.
+
+- Scene variant archive/comparison: regenerating a scene preserves the previous cut; saved variants can be previewed and restored without rerendering unaffected scenes.
