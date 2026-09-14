@@ -11,8 +11,15 @@ import { providerWorkerInventory } from './provider-adapters.mjs';
 import { preferredOpenRouterFreeModels } from './openrouter-catalog.mjs';
 import { pickCloudModel, textModelCatalog } from './text-model-policy.mjs';
 import { chooseFreeProvider, freeProviderSummary } from './provider-selector.mjs';
+import { sourceQuality, rankSources, rankFacts, narrationQuality, sceneAcceptance } from './content-quality.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'viral-shorts-test-'));
+const sampleSources=[{title:'Great Smog of London',url:'https://example.com/1',extract:'The Great Smog of London occurred in December 1952 and caused thousands of deaths.',provider:'wikipedia'},{title:'Unrelated',url:'https://example.com/2',extract:'A short generic sentence about another topic.',provider:'web'}];
+assert.ok(sourceQuality('Great Smog London',sampleSources[0])>sourceQuality('Great Smog London',sampleSources[1]));
+assert.equal(rankSources('Great Smog London',sampleSources)[0].title,'Great Smog of London');
+assert.ok(Array.isArray(rankFacts('Great Smog London',rankSources('Great Smog London',sampleSources))));
+assert.ok(narrationQuality('But one hidden detail changed how London responded.',{beat:'hook'})>=70);
+assert.equal(sceneAcceptance(80,'hook').accepted,true);assert.equal(sceneAcceptance(60,'context').accepted,false);
 assert.ok(Array.isArray(preferredOpenRouterFreeModels(3)));
 const catalog=textModelCatalog();assert.ok(catalog.ollama.length>=3);assert.ok(catalog.huggingface.length>=4);assert.equal(pickCloudModel('ollama',{task:'storyboard',quality:'strong'}),'gpt-oss:120b-cloud');assert.equal(pickCloudModel('huggingface',{task:'storyboard',quality:'balanced'}),'openai/gpt-oss-20b');
 assert.equal(isPublicHttps('https://example.com/a.mp4'),true);

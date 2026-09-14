@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { writeGenerationQueue, generativeStatus } from './generative-router.mjs';
 import { listAiCandidates } from './ai-candidate-router.mjs';
+import { rankSources, rankFacts, narrationQuality, sceneAcceptance } from './content-quality.mjs';
 
 const UA = 'ViralShortsStudio/0.2 (self-hosted creator tool)';
 const mediaBreakers=new Map();
@@ -114,12 +115,13 @@ export async function researchTopic(topic){
   const web=await tavilyResearch(topic);
   const seen=new Set(sources.map(x=>x.url));
   for(const item of web){ if(!seen.has(item.url)){sources.push(item);seen.add(item.url);} }
-  return sources.slice(0,8);
+  return rankSources(topic,sources).slice(0,8);
 }
 
 export function buildStoryboard({topic,niche,duration,sources,style='documentary'}){
   const targetScenes=Number(duration||60)<=30?8:Number(duration||60)<=60?14:20;
-  const facts=sources.flatMap(s=>sentences(s.extract));
+  const rankedFacts=rankFacts(topic,sources);
+  const facts=rankedFacts.map(x=>x.text);
   const hookByNiche={
     'true-crime':`The detail most people miss about ${topic} changes the whole story.`,
     history:`What really happened in ${topic} is stranger than the simplified version.`,
@@ -148,6 +150,8 @@ export function buildStoryboard({topic,niche,duration,sources,style='documentary
       motionPrompt:style==='whiteboard'?'progressive hand-drawn ink reveal with readable hold':(i%3===0?'slow cinematic push-in with subtle parallax':i%3===1?'controlled lateral pan with restrained documentary motion':'slow pull-back revealing contextual detail'),
       camera:i%3===0?'slow push in':i%3===1?'gentle pan':'slow zoom out',
       durationHint:Number((Number(duration||60)/targetScenes).toFixed(2)),
+      sourceIndex:i>0&&i<targetScenes-1?(rankedFacts[i-1]?.sourceIndex??0):null,
+      narrationQuality:narrationQuality(clean,{beat:beatName}),
       assets:[]
     };
   });
@@ -383,7 +387,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
         const compactSources=sources.map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,900)}));
         const completion=await completeText({task:'storyboard',quality:['true-crime','fact-check'].includes(project.niche)?'strong':'balanced',target:count*55,validate,messages:[
-          {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. Keep each narration concise at 8-14 words so it fits a fast vertical short. Keep overlay under 72 characters.'},
+          {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. Keep each narration concise at 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'},
           {role:'user',content:JSON.stringify({topic:project.topic,sceneCount:count,sources:compactSources})}
         ]});
         const text=completion.text; const ai=JSON.parse(text).map((x,i)=>({...x,sourceIndex:Number.isInteger(x.sourceIndex)&&sources[x.sourceIndex]?x.sourceIndex:i%sources.length,narration:String(x.narration||'').trim().slice(0,420),overlay:String(x.overlay||x.narration||'').trim().slice(0,95)}));storyboard=storyboard.map((scene,i)=>({...scene,...ai[i]}));
@@ -420,6 +424,12 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       let pack,last; const count=importantIndexes.has(scene.index)?autoCandidateCount:1;
       for(let attempt=0;attempt<2;attempt++){try{pack=await makeSceneCandidates(scene,dir,project.topic,mediaPool,videoPool,count);break;}catch(e){last=e;}}
       if(!pack)throw last;
+      let acceptance=sceneAcceptance(pack.selected?.candidateScore,scene.beat);
+      if(!acceptance.accepted&&count===1&&scene.style!=='whiteboard'){
+        try{const retry=await makeSceneCandidates({...scene,variantSeed:Number(scene.variantSeed||0)+7},dir,project.topic,mediaPool,videoPool,2);if((retry.selected?.candidateScore||0)>(pack.selected?.candidateScore||0))pack=retry;}catch{}
+        acceptance=sceneAcceptance(pack.selected?.candidateScore,scene.beat);
+      }
+      pack.selected.qualityGate=acceptance;
       if(pack.candidates.length>1){
         project.sceneVariants ||= {}; project.sceneVariants[String(scene.index)] ||= [];
         const archived=pack.candidates.map(c=>({id:crypto.randomUUID(),index:scene.index,createdAt:new Date().toISOString(),variantSeed:Number(c.variantSeed||0),duration:c.duration,assets:c.assets||[],hasRealVideo:!!c.hasRealVideo,visualType:c.visualType||'unknown',file:c.file,captions:c.captions,candidateScore:c.candidateScore,aiProvider:c.aiProvider,aiJobId:c.aiJobId,autoGenerated:true}));
@@ -459,12 +469,14 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const candidateScenes=Object.values(project.sceneVariants||{}).filter(v=>Array.isArray(v)&&v.some(x=>x.autoGenerated)).length;
     const candidateRenders=Object.values(project.sceneVariants||{}).flat().filter(x=>x.autoGenerated).length;
     const sourceCount=sources.length;
+    const sceneQuality=scenes.map(s=>({index:s.index,score:Number(s.candidateScore||0),gate:s.qualityGate||sceneAcceptance(s.candidateScore,storyboard.find(x=>x.index===s.index)?.beat)}));
+    const acceptedScenes=sceneQuality.filter(x=>x.gate.accepted).length;
     const viralityScore=Math.round(clamp(55+(scenes.length>=6?10:0)+(sourceCount>=5?8:0)+(realVideoScenes*3)+(Math.abs(durationDelta)<=0.5?12:0),0,100));
     const slug=project.topic.replace(/[^a-z0-9 ]/gi,' ').trim();
     const publish={title:`${slug}: the part most people miss`.slice(0,90),description:`A fast, source-backed ${project.niche.replace('-', ' ')} short about ${slug}. Verify claims using the included credits before publishing.`,hashtags:['#shorts',`#${project.niche.replace(/-/g,'')}`,'#storytelling']};
     stageMetric(metrics,'totalSeconds',totalStarted);
-    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length;
-    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,viralityScore},publish,metrics,completedAt:new Date().toISOString()});
+    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75);
+    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
     update({status:'failed',error:String(error.message||error),failedAt:new Date().toISOString()});
