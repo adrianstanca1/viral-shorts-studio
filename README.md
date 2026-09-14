@@ -16,3 +16,7 @@ Pipeline:
 10. Prepare title, description, hashtags, thumbnail/cover, publish plan
 
 Autonomous mode can run the pipeline, but publishing remains approval-gated by default.
+
+## Operations
+- `scripts/check-providers.py` verifies configured provider authentication without printing credentials.
+Runtime credentials stay outside Git in `../secrets/`; only non-secret provider status/registry metadata is versioned.
