@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { writeGenerationQueue, generativeStatus } from './generative-router.mjs';
 
 const UA = 'ViralShortsStudio/0.2 (self-hosted creator tool)';
 const mediaBreakers=new Map();
@@ -333,7 +334,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     stageMetric(metrics,'mediaDiscoverySeconds',mediaStarted);
     const generationPlan={version:1,aspect:'9:16',duration:Number(project.duration),freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
     saveJson(path.join(dir,'generation-prompts.json'),generationPlan);
-    update({storyboard,generationPlan,mediaCacheHit:mediaCached.cacheHit,mediaPool:mediaPool.map(({url,...m})=>m),videoPool:videoPool.map(({url,...m})=>m),progress:25,status:'generating-scenes',metrics});
+    project.generationPlan=generationPlan;
+    const generativeQueue=writeGenerationQueue(project,dir);
+    update({storyboard,generationPlan,generativeQueue:{file:generativeQueue.file,requestCount:generativeQueue.queue.requests.length,status:generativeStatus()},mediaCacheHit:mediaCached.cacheHit,mediaPool:mediaPool.map(({url,...m})=>m),videoPool:videoPool.map(({url,...m})=>m),progress:25,status:'generating-scenes',metrics});
     const sceneStarted=nowMs();
     const results=new Array(storyboard.length); let completed=0;
     const previousByIndex=new Map((project.scenes||[]).filter(s=>s.file&&fs.existsSync(s.file)).map(s=>[s.index,s]));

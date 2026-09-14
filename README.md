@@ -29,4 +29,6 @@ Runtime credentials stay outside Git in `../secrets/`; only non-secret provider 
 Important scenes (hook, midpoint, finale) generate three visual candidates by default. Candidates are scored for source relevance, license quality, visual diversity and real-motion footage; the strongest candidate is selected automatically while all candidates remain available in the browser editor for manual override. Set `autoCandidates:false` or `candidateCount:1` in the project request to disable this behavior.
 ## Provider-ready generative media plan
 Every project now writes `generation-prompts.json` with a 9:16 visual prompt, motion prompt, beat, shot type, duration and search query for every scene. This is the stable handoff contract for future text-to-video/image-to-video providers; providers remain disabled until their free usage is verified.
+## Generative provider handoff
+Each completed storyboard now produces `generation-prompts.json` plus `generative-queue.json`. The queue is provider-agnostic and contains one 9:16 image-to-video request per scene, including visual prompt, motion prompt, duration, negative prompt and free-only routing policy. External AI generation remains plan-only until a provider is both configured and explicitly verified as free. Paid fallback is never automatic.
 

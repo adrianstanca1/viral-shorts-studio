@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { produceProject, mediaProviderStatus } from './pipeline.mjs';
+import { generativeStatus } from './generative-router.mjs';
 
 const app = express();
 app.use(express.json({limit:'2mb'}));
@@ -27,7 +28,7 @@ function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id)
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
-app.get('/api/providers',(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus()}));
+app.get('/api/providers',(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus()}));
 app.get('/api/stats',(req,res)=>{
   const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
@@ -116,6 +117,7 @@ app.get('/api/projects/:id/scenes/:index/video',(req,res)=>{
 app.get('/api/projects',(req,res)=>res.json(list()));
 app.get('/api/projects/:id',(req,res)=>{ const j=load(req.params.id); if(!j) return res.status(404).json({error:'not found'}); res.json(j); });
 app.get('/api/projects/:id/prompts',(req,res)=>{ const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'}); if(!j.generationPlan)return res.status(404).json({error:'generation plan not ready'}); res.json(j.generationPlan); });
+app.get('/api/projects/:id/generative-queue',(req,res)=>{ const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'}); const f=j.generativeQueue?.file; if(!f||!fs.existsSync(f))return res.status(404).json({error:'generative queue not ready'}); res.sendFile(f); });
 app.get('/api/projects/:id/video',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.file||!fs.existsSync(j.render.file)) return res.status(404).json({error:'video not ready'}); res.sendFile(j.render.file); });
 app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.credits||!fs.existsSync(j.render.credits)) return res.status(404).json({error:'credits not ready'}); res.sendFile(j.render.credits); });
 
