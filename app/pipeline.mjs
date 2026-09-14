@@ -451,13 +451,16 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       try{
         const count=storyboard.length;
         const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
-        const compactSources=sources.map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,900)}));
-        const completion=await completeText({task:'storyboard',quality:['true-crime','fact-check'].includes(project.niche)?'strong':'balanced',target:count*55,validate,messages:[
+        const strongScript=['true-crime','fact-check'].includes(project.niche),sourceLimit=strongScript?8:6,extractLimit=strongScript?900:560;
+        const compactSources=sources.slice(0,sourceLimit).map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,extractLimit)}));
+        const scriptStarted=nowMs();
+        const completion=await completeText({task:'storyboard',quality:strongScript?'strong':'balanced',target:count*(strongScript?55:42),validate,messages:[
           {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. For 30-second videos keep each narration 8-12 words; otherwise 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'},
           {role:'user',content:JSON.stringify({topic:project.topic,sceneCount:count,sources:compactSources})}
         ]});
         const text=completion.text; const ai=JSON.parse(text).map((x,i)=>({...x,sourceIndex:Number.isInteger(x.sourceIndex)&&sources[x.sourceIndex]?x.sourceIndex:i%sources.length,narration:String(x.narration||'').trim().slice(0,420),overlay:String(x.overlay||x.narration||'').trim().slice(0,95)}));storyboard=storyboard.map((scene,i)=>({...scene,...ai[i]}));
-        update({scriptProvider:completion.provider,scriptModel:completion.model});
+        stageMetric(metrics,'scriptSeconds',scriptStarted);
+        update({scriptProvider:completion.provider,scriptModel:completion.model,metrics});
       }catch(error){
         const reason=(error?.failures||[]).map(x=>`${x.id}:${x.error}`).join('; ').slice(0,240);
         update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
@@ -522,7 +525,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       }
       return pack.selected;
     };
-    let cursor=0; const workerCount=Math.min(Number(process.env.SCENE_CONCURRENCY||2),storyboard.length,3);
+    let cursor=0; const configuredConcurrency=Number(process.env.SCENE_CONCURRENCY||0),adaptiveConcurrency=Number(project.duration)<=30?3:2;
+    const workerCount=Math.min(configuredConcurrency>0?configuredConcurrency:adaptiveConcurrency,storyboard.length,3);
+    metrics.sceneConcurrency=workerCount;
     const worker=async()=>{while(true){const i=cursor++;if(i>=storyboard.length)return;results[i]=await renderOne(storyboard[i]);completed++;update({scenes:results.filter(Boolean).sort((a,b)=>a.index-b.index),progress:25+Math.round(60*completed/storyboard.length),metrics});}};
     await Promise.all(Array.from({length:workerCount},worker));
     const scenes=results;

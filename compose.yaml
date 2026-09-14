@@ -15,7 +15,7 @@ services:
     environment:
       PORT: "3010"
       DATA_DIR: /app/data
-      SCENE_CONCURRENCY: ${SCENE_CONCURRENCY:-2}
+      SCENE_CONCURRENCY: ${SCENE_CONCURRENCY:-0}
       ROUTER_STATE_FILE: /app/data/provider-state.json
       AUTONOMOUS_MODE: ${AUTONOMOUS_MODE:-true}
       REQUIRE_APPROVAL_BEFORE_PUBLISH: ${REQUIRE_APPROVAL_BEFORE_PUBLISH:-true}
