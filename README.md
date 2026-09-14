@@ -20,6 +20,12 @@ Pipeline:
 
 Autonomous mode can run the pipeline, but publishing remains approval-gated by default.
 
+## Publish approval workflow
+- Completed projects default to `pending` review when `REQUIRE_APPROVAL_BEFORE_PUBLISH=true`.
+- Only projects with `qa.launchReady=true` can be approved for publishing.
+- Scene regeneration, provider-candidate replacement, or variant selection invalidates prior approval and returns the project to `pending`.
+- Rejections can include a review note and remain in the project export for auditability.
+
 ## Operations
 - `scripts/check-providers.py` verifies configured provider authentication without printing credentials.
 Runtime credentials stay outside Git in `../secrets/`; only non-secret provider status/registry metadata is versioned.

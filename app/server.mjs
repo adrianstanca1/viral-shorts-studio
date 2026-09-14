@@ -15,6 +15,7 @@ import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from '.
 import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
 import { authConfigured, assertLaunchSecurity, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
 import { recoverProjectState, prepareProjectRetry, inferFailureStage, failureIsRecent } from './recovery.mjs';
+import { ensurePublishApproval, decidePublishApproval, invalidatePublishApproval } from './publish-approval.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -33,6 +34,7 @@ app.use(createRateLimiter({windowMs:5*60_000,max:Number(process.env.WRITE_RATE_L
 app.use(express.static(new URL('./public', import.meta.url).pathname));
 const PORT = Number(process.env.PORT || 3010);
 const DATA = process.env.DATA_DIR || '/app/data';
+const REQUIRE_PUBLISH_APPROVAL=!['0','false','no','off'].includes(String(process.env.REQUIRE_APPROVAL_BEFORE_PUBLISH??'true').toLowerCase());
 const niches = ['true-crime','history','storytelling','fact-check'];
 const styles = ['documentary','cinematic','hybrid','whiteboard'];
 const jobs = new Map();
@@ -48,10 +50,10 @@ function kick(){
 
 function projectDir(id){ return path.join(DATA,'projects',id); }
 function projectFile(id){ return path.join(projectDir(id),'project.json'); }
-function save(job){ fs.mkdirSync(projectDir(job.id),{recursive:true}); fs.writeFileSync(projectFile(job.id),JSON.stringify(job,null,2)); jobs.set(job.id,job); if(job.status==='complete'&&enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))setImmediate(()=>maybeAutoCloudPlan(job.id)); }
+function save(job){ if(job.status==='complete')ensurePublishApproval(job,{required:REQUIRE_PUBLISH_APPROVAL}); fs.mkdirSync(projectDir(job.id),{recursive:true}); fs.writeFileSync(projectFile(job.id),JSON.stringify(job,null,2)); jobs.set(job.id,job); if(job.status==='complete'&&enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))setImmediate(()=>maybeAutoCloudPlan(job.id)); }
 function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id); if(!fs.existsSync(p)) return null; const j=JSON.parse(fs.readFileSync(p,'utf8')); jobs.set(id,j); return j; }
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
-function projectSummary(j){ const variants=Object.values(j.sceneVariants||{}).reduce((n,v)=>n+(Array.isArray(v)?v.length:0),0); return {id:j.id,topic:j.topic,niche:j.niche,style:j.style||'documentary',duration:j.duration,status:j.status,progress:Number(j.progress||0),createdAt:j.createdAt,completedAt:j.completedAt||null,error:j.error?String(j.error).slice(0,240):null,failedStage:j.failedStage||null,retryCount:Number(j.retryCount||0),sceneCount:j.scenes?.length||0,variantCount:variants,score:j.qa?.viralityScore??null,actualDuration:j.render?.actualDuration??null,hasVideo:!!j.render?.file}; }
+function projectSummary(j){ const variants=Object.values(j.sceneVariants||{}).reduce((n,v)=>n+(Array.isArray(v)?v.length:0),0); return {id:j.id,topic:j.topic,niche:j.niche,style:j.style||'documentary',duration:j.duration,status:j.status,progress:Number(j.progress||0),createdAt:j.createdAt,completedAt:j.completedAt||null,error:j.error?String(j.error).slice(0,240):null,failedStage:j.failedStage||null,retryCount:Number(j.retryCount||0),publishApproval:j.publishApproval?.status||null,sceneCount:j.scenes?.length||0,variantCount:variants,score:j.qa?.viralityScore??null,actualDuration:j.render?.actualDuration??null,hasVideo:!!j.render?.file}; }
 
 async function maybeAutoCloudPlan(id){
   const j=load(id);if(!j||j.status!=='complete'||!j.render?.file||!fs.existsSync(j.render.file))return;
@@ -93,7 +95,7 @@ app.get('/api/diagnostics',async(req,res)=>{
 app.get('/api/stats',(req,res)=>{
   const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
-  res.json({projects:all.length,completed:completed.length,failed:failed.length,queued:all.filter(x=>x.status==='queued').length,successRate:all.length?Number((100*completed.length/all.length).toFixed(1)):0,averageProductionSeconds:avg(completed),researchCacheHits:completed.filter(x=>x.researchCacheHit).length,mediaCacheHits:completed.filter(x=>x.mediaCacheHit).length,averageViralityScore:completed.length?Number((completed.reduce((n,x)=>n+Number(x.qa?.viralityScore||0),0)/completed.length).toFixed(1)):0});
+  res.json({projects:all.length,completed:completed.length,failed:failed.length,queued:all.filter(x=>x.status==='queued').length,pendingApproval:completed.filter(x=>x.publishApproval?.status==='pending').length,approved:completed.filter(x=>x.publishApproval?.status==='approved').length,successRate:all.length?Number((100*completed.length/all.length).toFixed(1)):0,averageProductionSeconds:avg(completed),researchCacheHits:completed.filter(x=>x.researchCacheHit).length,mediaCacheHits:completed.filter(x=>x.mediaCacheHit).length,averageViralityScore:completed.length?Number((completed.reduce((n,x)=>n+Number(x.qa?.viralityScore||0),0)/completed.length).toFixed(1)):0});
 });
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
@@ -196,7 +198,7 @@ app.post('/api/provider-jobs/:id/resolve-local',(req,res)=>{
     if(['complete','failed'].includes(j.status)){
       archiveSceneVariant(j,existing.sceneIndex);const scene=j.storyboard?.find(s=>s.index===existing.sceneIndex);if(scene)scene.variantSeed=Number(scene.variantSeed||0)+1;
       try{fs.rmSync(path.join(projectDir(j.id),`scene-${String(existing.sceneIndex).padStart(2,'0')}`),{recursive:true,force:true})}catch{}
-      j.scenes=(j.scenes||[]).filter(s=>s.index!==existing.sceneIndex);j.status='queued';j.progress=25;delete j.error;delete j.render;save(j);setImmediate(kick);
+      j.scenes=(j.scenes||[]).filter(s=>s.index!==existing.sceneIndex);j.status='queued';j.progress=25;delete j.error;delete j.render;invalidatePublishApproval(j,'provider-candidate-applied',{required:REQUIRE_PUBLISH_APPROVAL});save(j);setImmediate(kick);
     }
     res.json({job:existing,item,projectStatus:j.status});
   }catch(e){res.status(400).json({error:String(e.message||e)})}
@@ -209,7 +211,7 @@ app.post('/api/provider-jobs/:id/resolve',(req,res)=>{
     if(['complete','failed'].includes(j.status)){
       archiveSceneVariant(j,job.sceneIndex);const scene=j.storyboard?.find(s=>s.index===job.sceneIndex);if(scene)scene.variantSeed=Number(scene.variantSeed||0)+1;
       try{fs.rmSync(path.join(projectDir(j.id),`scene-${String(job.sceneIndex).padStart(2,'0')}`),{recursive:true,force:true})}catch{}
-      j.scenes=(j.scenes||[]).filter(s=>s.index!==job.sceneIndex);j.status='queued';j.progress=25;delete j.error;delete j.render;save(j);setImmediate(kick);
+      j.scenes=(j.scenes||[]).filter(s=>s.index!==job.sceneIndex);j.status='queued';j.progress=25;delete j.error;delete j.render;invalidatePublishApproval(j,'provider-candidate-applied',{required:REQUIRE_PUBLISH_APPROVAL});save(j);setImmediate(kick);
     }
     res.json({job,item,projectStatus:j.status});
   }catch(e){res.status(400).json({error:String(e.message||e)})}
@@ -224,7 +226,7 @@ app.post('/api/projects/:id/scenes/:index/regenerate',(req,res)=>{
   archiveSceneVariant(j,index); scene.variantSeed=Number(scene.variantSeed||0)+1;
   const dir=path.join(projectDir(j.id),`scene-${String(index).padStart(2,'0')}`);
   try{fs.rmSync(dir,{recursive:true,force:true});}catch{}
-  j.scenes=(j.scenes||[]).filter(s=>s.index!==index); j.status='queued'; j.progress=25; delete j.error; delete j.render;
+  j.scenes=(j.scenes||[]).filter(s=>s.index!==index); j.status='queued'; j.progress=25; delete j.error; delete j.render; invalidatePublishApproval(j,'scene-regenerated',{required:REQUIRE_PUBLISH_APPROVAL});
   save(j); setImmediate(kick); res.status(202).json({id:j.id,scene:index,variantSeed:scene.variantSeed,status:j.status});
 });
 app.get('/api/projects/:id/scenes/:index/variants',(req,res)=>{
@@ -245,7 +247,7 @@ app.post('/api/projects/:id/scenes/:index/variants/:variantId/select',(req,res)=
   if(!v?.file||!fs.existsSync(v.file))return res.status(404).json({error:'variant not found'});
   archiveSceneVariant(j,index);
   const selected={index,duration:v.duration,assets:v.assets||[],hasRealVideo:!!v.hasRealVideo,visualType:v.visualType||'unknown',candidateScore:v.candidateScore,aiProvider:v.aiProvider,aiJobId:v.aiJobId,file:v.file,captions:v.captions,variantId:v.id,narration:j.storyboard?.find(s=>s.index===index)?.narration||''};
-  j.scenes=[...(j.scenes||[]).filter(s=>s.index!==index),selected].sort((a,b)=>a.index-b.index); j.status='queued'; j.progress=85; delete j.error; delete j.render;
+  j.scenes=[...(j.scenes||[]).filter(s=>s.index!==index),selected].sort((a,b)=>a.index-b.index); j.status='queued'; j.progress=85; delete j.error; delete j.render; invalidatePublishApproval(j,'scene-variant-selected',{required:REQUIRE_PUBLISH_APPROVAL});
   save(j); setImmediate(kick); res.status(202).json({id:j.id,scene:index,variantId:v.id,status:j.status});
 });
 app.get('/api/projects/:id/scenes/:index/video',(req,res)=>{
@@ -261,14 +263,21 @@ app.get('/api/projects/:id/prompts',(req,res)=>{ const j=load(req.params.id); if
 app.get('/api/projects/:id/generative-queue',(req,res)=>{ const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'}); const f=j.generativeQueue?.file; if(!f||!fs.existsSync(f))return res.status(404).json({error:'generative queue not ready'}); res.sendFile(f); });
 function downloadName(j,suffix){const base=String(j.topic||'viral-short').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,70)||'viral-short';return `${base}-${suffix}`;}
 function publicExport(j){
-  return {id:j.id,topic:j.topic,niche:j.niche,style:j.style,duration:j.duration,status:j.status,createdAt:j.createdAt,completedAt:j.completedAt||null,publish:j.publish||null,qa:j.qa||null,metrics:j.metrics||null,sources:(j.sources||[]).map(x=>({title:x.title,url:x.url,provider:x.provider})),storyboard:(j.storyboard||[]).map(x=>({index:x.index,beat:x.beat,narration:x.narration,overlay:x.overlay,searchQuery:x.searchQuery})),scenes:(j.scenes||[]).map(x=>({index:x.index,duration:x.duration,visualType:x.visualType,hasRealVideo:!!x.hasRealVideo,candidateScore:x.candidateScore,aiProvider:x.aiProvider||null,assets:(x.assets||[]).map(a=>({title:a.title,source:a.source||a.url||null,license:a.license||null,artist:a.artist||null,type:a.type||null,provider:a.provider||null}))}))};
+  return {id:j.id,topic:j.topic,niche:j.niche,style:j.style,duration:j.duration,status:j.status,createdAt:j.createdAt,completedAt:j.completedAt||null,publish:j.publish||null,publishApproval:j.publishApproval||null,qa:j.qa||null,metrics:j.metrics||null,sources:(j.sources||[]).map(x=>({title:x.title,url:x.url,provider:x.provider})),storyboard:(j.storyboard||[]).map(x=>({index:x.index,beat:x.beat,narration:x.narration,overlay:x.overlay,searchQuery:x.searchQuery})),scenes:(j.scenes||[]).map(x=>({index:x.index,duration:x.duration,visualType:x.visualType,hasRealVideo:!!x.hasRealVideo,candidateScore:x.candidateScore,aiProvider:x.aiProvider||null,assets:(x.assets||[]).map(a=>({title:a.title,source:a.source||a.url||null,license:a.license||null,artist:a.artist||null,type:a.type||null,provider:a.provider||null}))}))};
 }
+
+app.post('/api/projects/:id/publish-approval',(req,res)=>{
+  const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
+  try{const approval=decidePublishApproval(j,{decision:req.body?.decision,note:req.body?.note});save(j);res.json({id:j.id,publishApproval:approval});}
+  catch(e){res.status(409).json({error:String(e.message||e)});}
+});
+
 app.get('/api/projects/:id/video',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.file||!fs.existsSync(j.render.file)) return res.status(404).json({error:'video not ready'}); if(req.query.download==='1')return res.download(j.render.file,downloadName(j,'final.mp4')); res.sendFile(j.render.file); });
 app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.credits||!fs.existsSync(j.render.credits)) return res.status(404).json({error:'credits not ready'}); if(req.query.download==='1')return res.download(j.render.credits,downloadName(j,'credits.json')); res.sendFile(j.render.credits); });
 app.get('/api/projects/:id/export',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});res.setHeader('Content-Disposition',`attachment; filename="${downloadName(j,'project.json')}"`);res.json(publicExport(j));});
 app.delete('/api/projects/:id',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});const providerJobsDeleted=deleteProviderJobsForProject(DATA,j.id),aiInboxDeleted=deleteAiCandidatesForProject(DATA,j.id);jobs.delete(j.id);fs.rmSync(projectDir(j.id),{recursive:true,force:true});res.json({deleted:true,id:j.id,providerJobsDeleted,aiInboxDeleted});});
 
-for(const job of list()){let changed=false;if(job.status==='failed'&&!job.failedStage){job.failedStage=inferFailureStage(job);changed=true;}const recovered=recoverProjectState(job);if(recovered.changed||changed)save(job);}
+for(const job of list()){let changed=false;if(job.status==='failed'&&!job.failedStage){job.failedStage=inferFailureStage(job);changed=true;}const hadApproval=!!job.publishApproval?.status;if(job.status==='complete')ensurePublishApproval(job,{required:REQUIRE_PUBLISH_APPROVAL});const recovered=recoverProjectState(job);if(recovered.changed||changed||(!hadApproval&&!!job.publishApproval?.status))save(job);}
 reconcileProviderJobs(DATA);verifyProviders(DATA).catch(()=>{});refreshOpenRouterFreeCatalog().catch(()=>{});setInterval(()=>reconcileProviderJobs(DATA),30000).unref();setInterval(()=>verifyProviders(DATA).catch(()=>{}),15*60*1000).unref();setInterval(()=>refreshOpenRouterFreeCatalog().catch(()=>{}),30*60*1000).unref();
 setInterval(()=>{if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});},60000).unref();
 setImmediate(()=>{kick();if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});});
