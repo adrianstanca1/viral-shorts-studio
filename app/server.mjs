@@ -35,8 +35,8 @@ app.get('/api/stats',(req,res)=>{
 });
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
-  stages:['research','source-check','hook','script','storyboard','candidate-generation','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
-  formats:['9:16','30s','60s','90s'],
+  stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','candidate-generation','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
+  formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes'],
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],
   optionalProviders:['Pexels','Pixabay','OpenRouter','Tavily','fal.ai','future image-to-video adapters'],
   policy:['cite sources','preserve asset credits','approval before publishing','do not fabricate real-crime claims']
@@ -115,6 +115,7 @@ app.get('/api/projects/:id/scenes/:index/video',(req,res)=>{
 
 app.get('/api/projects',(req,res)=>res.json(list()));
 app.get('/api/projects/:id',(req,res)=>{ const j=load(req.params.id); if(!j) return res.status(404).json({error:'not found'}); res.json(j); });
+app.get('/api/projects/:id/prompts',(req,res)=>{ const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'}); if(!j.generationPlan)return res.status(404).json({error:'generation plan not ready'}); res.json(j.generationPlan); });
 app.get('/api/projects/:id/video',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.file||!fs.existsSync(j.render.file)) return res.status(404).json({error:'video not ready'}); res.sendFile(j.render.file); });
 app.get('/api/projects/:id/credits',(req,res)=>{ const j=load(req.params.id); if(!j?.render?.credits||!fs.existsSync(j.render.credits)) return res.status(404).json({error:'credits not ready'}); res.sendFile(j.render.credits); });
 

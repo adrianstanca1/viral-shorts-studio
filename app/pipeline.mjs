@@ -97,7 +97,7 @@ export async function researchTopic(topic){
 }
 
 export function buildStoryboard({topic,niche,duration,sources}){
-  const targetScenes=clamp(Math.round(Number(duration||60)/6),6,12);
+  const targetScenes=Number(duration||60)<=30?8:Number(duration||60)<=60?14:20;
   const facts=sources.flatMap(s=>sentences(s.extract));
   const hookByNiche={
     'true-crime':`The detail most people miss about ${topic} changes the whole story.`,
@@ -106,17 +106,30 @@ export function buildStoryboard({topic,niche,duration,sources}){
     storytelling:`This story about ${topic} gets more surprising with every step.`
   };
   const hook=hookByNiche[niche]||hookByNiche.storytelling;
-  const chosen=[hook,...facts.slice(0,targetScenes-2)];
-  chosen.push(`That is the short version of ${topic}. Check the cited sources before sharing the claim further.`);
-  return chosen.slice(0,targetScenes).map((narration,i)=>({
-    index:i+1,
-    narration:narration.split(/\s+/).slice(0,22).join(' '),
-    overlay:(i===0?hook:narration).replace(/\s+/g,' ').slice(0,95),
-    searchQuery:`${topic} ${narration.split(' ').slice(0,7).join(' ')}`,
-    camera:i%3===0?'slow push in':i%3===1?'gentle pan':'slow zoom out',
-    durationHint:Number((Number(duration||60)/targetScenes).toFixed(2)),
-    assets:[]
-  }));
+  const body=[];
+  const factPool=facts.length?facts:[`${topic} is documented in the cited sources.`];
+  for(let i=0;i<targetScenes-2;i++) body.push(factPool[i%factPool.length]);
+  const chosen=[hook,...body,`That is the short version of ${topic}. Check the cited sources before sharing the claim further.`];
+  const beat=(i)=>{
+    if(i===0)return 'hook'; if(i===targetScenes-1)return 'payoff';
+    const r=i/(targetScenes-1); if(r<.2)return 'setup'; if(r<.45)return 'context'; if(r<.7)return 'evidence'; return 'escalation';
+  };
+  const shotByBeat={hook:'dramatic close-up',setup:'establishing wide shot',context:'archival detail',evidence:'evidence or document detail',escalation:'dynamic contextual shot',payoff:'memorable closing image'};
+  return chosen.slice(0,targetScenes).map((narration,i)=>{
+    const beatName=beat(i), shotType=shotByBeat[beatName];
+    const clean=narration.split(/\s+/).slice(0,22).join(' ');
+    return {
+      index:i+1, beat:beatName, shotType,
+      narration:clean,
+      overlay:(i===0?hook:narration).replace(/\s+/g,' ').slice(0,95),
+      searchQuery:`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`,
+      visualPrompt:`Vertical cinematic ${shotType} about ${topic}. Historically/contextually accurate, documentary style, no visible text, 9:16 composition. Scene fact: ${clean}`,
+      motionPrompt:i%3===0?'slow cinematic push-in with subtle parallax':i%3===1?'controlled lateral pan with restrained documentary motion':'slow pull-back revealing contextual detail',
+      camera:i%3===0?'slow push in':i%3===1?'gentle pan':'slow zoom out',
+      durationHint:Number((Number(duration||60)/targetScenes).toFixed(2)),
+      assets:[]
+    };
+  });
 }
 
 async function commonsImages(query,limit=3){
@@ -318,12 +331,16 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     });
     const mediaPool=mediaCached.value.images||[], videoPool=mediaCached.value.videos||[];
     stageMetric(metrics,'mediaDiscoverySeconds',mediaStarted);
-    update({storyboard,mediaCacheHit:mediaCached.cacheHit,mediaPool:mediaPool.map(({url,...m})=>m),videoPool:videoPool.map(({url,...m})=>m),progress:25,status:'generating-scenes',metrics});
+    const generationPlan={version:1,aspect:'9:16',duration:Number(project.duration),freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
+    saveJson(path.join(dir,'generation-prompts.json'),generationPlan);
+    update({storyboard,generationPlan,mediaCacheHit:mediaCached.cacheHit,mediaPool:mediaPool.map(({url,...m})=>m),videoPool:videoPool.map(({url,...m})=>m),progress:25,status:'generating-scenes',metrics});
     const sceneStarted=nowMs();
     const results=new Array(storyboard.length); let completed=0;
     const previousByIndex=new Map((project.scenes||[]).filter(s=>s.file&&fs.existsSync(s.file)).map(s=>[s.index,s]));
-    const importantIndexes=new Set([1,Math.ceil(storyboard.length/2),storyboard.length]);
+    const importantPoints=storyboard.length>=18?[1,Math.ceil(storyboard.length*.25),Math.ceil(storyboard.length*.5),Math.ceil(storyboard.length*.75),storyboard.length]:storyboard.length>=12?[1,Math.ceil(storyboard.length/3),Math.ceil(storyboard.length*2/3),storyboard.length]:[1,Math.ceil(storyboard.length/2),storyboard.length];
+    const importantIndexes=new Set(importantPoints);
     const autoCandidateCount=project.autoCandidates===false?1:clamp(Number(project.candidateCount||3),1,4);
+    update({scenePlan:{targetScenes:storyboard.length,importantScenes:[...importantIndexes],candidateCount:autoCandidateCount}});
     const renderOne=async(scene)=>{
       const previous=previousByIndex.get(scene.index); if(previous)return previous;
       let pack,last; const count=importantIndexes.has(scene.index)?autoCandidateCount:1;

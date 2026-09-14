@@ -7,6 +7,9 @@ Pipeline:
 1. Discover topic/angle
 2. Research and verify sources
 3. Generate hook + 30s, 60s, or 90s script
+   - 30s: 8 scenes
+   - 60s: 14 scenes
+   - 90s: 20 scenes
 4. Create scene/storyboard plan
 5. Generate visual prompts and source licensed/public-domain media
 6. Generate narration/voice plan
@@ -24,4 +27,6 @@ Runtime credentials stay outside Git in `../secrets/`; only non-secret provider 
 - Scene variant archive/comparison: regenerating a scene preserves the previous cut; saved variants can be previewed and restored without rerendering unaffected scenes.
 ## Automatic candidate selection
 Important scenes (hook, midpoint, finale) generate three visual candidates by default. Candidates are scored for source relevance, license quality, visual diversity and real-motion footage; the strongest candidate is selected automatically while all candidates remain available in the browser editor for manual override. Set `autoCandidates:false` or `candidateCount:1` in the project request to disable this behavior.
+## Provider-ready generative media plan
+Every project now writes `generation-prompts.json` with a 9:16 visual prompt, motion prompt, beat, shot type, duration and search query for every scene. This is the stable handoff contract for future text-to-video/image-to-video providers; providers remain disabled until their free usage is verified.
 
