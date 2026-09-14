@@ -51,7 +51,7 @@ function projectFile(id){ return path.join(projectDir(id),'project.json'); }
 function save(job){ fs.mkdirSync(projectDir(job.id),{recursive:true}); fs.writeFileSync(projectFile(job.id),JSON.stringify(job,null,2)); jobs.set(job.id,job); if(job.status==='complete'&&enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))setImmediate(()=>maybeAutoCloudPlan(job.id)); }
 function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id); if(!fs.existsSync(p)) return null; const j=JSON.parse(fs.readFileSync(p,'utf8')); jobs.set(id,j); return j; }
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
-function projectSummary(j){ const variants=Object.values(j.sceneVariants||{}).reduce((n,v)=>n+(Array.isArray(v)?v.length:0),0); return {id:j.id,topic:j.topic,niche:j.niche,style:j.style||'documentary',duration:j.duration,status:j.status,progress:Number(j.progress||0),createdAt:j.createdAt,completedAt:j.completedAt||null,error:j.error?String(j.error).slice(0,240):null,sceneCount:j.scenes?.length||0,variantCount:variants,score:j.qa?.viralityScore??null,actualDuration:j.render?.actualDuration??null,hasVideo:!!j.render?.file}; }
+function projectSummary(j){ const variants=Object.values(j.sceneVariants||{}).reduce((n,v)=>n+(Array.isArray(v)?v.length:0),0); return {id:j.id,topic:j.topic,niche:j.niche,style:j.style||'documentary',duration:j.duration,status:j.status,progress:Number(j.progress||0),createdAt:j.createdAt,completedAt:j.completedAt||null,error:j.error?String(j.error).slice(0,240):null,failedStage:j.failedStage||null,retryCount:Number(j.retryCount||0),sceneCount:j.scenes?.length||0,variantCount:variants,score:j.qa?.viralityScore??null,actualDuration:j.render?.actualDuration??null,hasVideo:!!j.render?.file}; }
 
 async function maybeAutoCloudPlan(id){
   const j=load(id);if(!j||j.status!=='complete'||!j.render?.file||!fs.existsSync(j.render.file))return;
@@ -70,7 +70,8 @@ app.get('/api/diagnostics',async(req,res)=>{
   try{
     const st=fs.statfsSync(DATA),freeBytes=Number(st.bavail)*Number(st.bsize),totalBytes=Number(st.blocks)*Number(st.bsize),freePercent=totalBytes?Number((100*freeBytes/totalBytes).toFixed(1)):0;
     const text=await textProviderStatus(),local=text.providers?.find(p=>p.id==='ollama-local');
-    const jobsState=providerJobStatus(DATA),pending=(jobsState.counts?.pending||0)+(jobsState.counts?.leased||0);
+    const jobsState=providerJobStatus(DATA),pending=(jobsState.counts?.pending||0)+(jobsState.counts?.leased||0),providerFailures=(jobsState.counts?.failed||0)+(jobsState.counts?.expired||0);
+    const recentProjectFailures=list().filter(x=>x.status==='failed').slice(0,5).map(x=>({id:x.id,topic:x.topic,stage:x.failedStage||null,error:String(x.error||'').slice(0,240),failedAt:x.failedAt||null,retryCount:Number(x.retryCount||0)}));
     const workerFile=path.join(DATA,'provider-worker-status.json');let workerAgeSeconds=null;try{workerAgeSeconds=Math.max(0,Math.round((Date.now()-fs.statSync(workerFile).mtimeMs)/1000));}catch{}
     const checks=[
       {id:'storage',label:'Storage',ok:freePercent>=10,detail:`${(freeBytes/1073741824).toFixed(1)} GB free`},
@@ -83,7 +84,7 @@ app.get('/api/diagnostics',async(req,res)=>{
       {id:'rate-limit',label:'Write rate limit',ok:true,detail:`${Number(process.env.WRITE_RATE_LIMIT||120)} requests / 5 min`}
     ];
     const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
-    res.json({status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending},activeProject:active,shuttingDown,generatedAt:new Date().toISOString()});
+    res.json({status:critical.every(x=>x.ok)?'ready':'degraded',checks,storage:{freeBytes,totalBytes,freePercent},queue:{pending,providerFailures},recentProjectFailures,activeProject:active,shuttingDown,generatedAt:new Date().toISOString()});
   }catch(e){res.status(500).json({status:'degraded',error:'diagnostics unavailable'});}
 });
 
@@ -162,7 +163,7 @@ app.post('/api/projects/:id/retry',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
   if(j.status!=='failed')return res.status(409).json({error:'Only failed projects can be retried'});
   if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)return res.status(429).json({error:'Queue full'});
-  j.status='queued';delete j.error;save(j);setImmediate(kick);res.status(202).json(j);
+  j.status='queued';j.progress=0;j.retryCount=Number(j.retryCount||0)+1;j.lastRetryAt=new Date().toISOString();delete j.error;save(j);setImmediate(kick);res.status(202).json(j);
 });
 
 function archiveSceneVariant(j,index){

@@ -593,7 +593,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,editingRhythm,editingReady,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,narrationScores,averageNarrationScore,weakNarrationScenes,narrationRepair:project.narrationRepair||{count:0,scenes:[]},viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
-    update({status:'failed',error:String(error.message||error),failedAt:new Date().toISOString()});
+    const failedAt=new Date().toISOString(),failedStage=String(project.status||'unknown'),message=String(error.message||error).slice(0,1200);
+    const failureHistory=[...(project.failureHistory||[]),{at:failedAt,stage:failedStage,error:message}].slice(-5);
+    update({status:'failed',error:message,failedStage,failedAt,failureHistory});
     throw error;
   }
 }
