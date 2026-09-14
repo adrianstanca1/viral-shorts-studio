@@ -459,10 +459,17 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     storyboard=optimizePacing(storyboard,Number(project.duration));
     update({storyboard,pacingOptimized:true,narrationRepair:{count:narrationRepairs.length,scenes:narrationRepairs},visualDirectionVersion:2});
     const mediaStarted=nowMs();
-    const cacheKey=`${project.topic}|media-v2`;
+    const cacheKey=`${project.topic}|media-v3`;
     const mediaCached=await cachedJson(root,'media',cacheKey,12*60*60*1000,async()=>{
-      const [images,videos]=await Promise.all([commonsImages(project.topic,24).catch(()=>[]),commonsVideos(project.topic,8).catch(()=>[])]);
-      return {images,videos};
+      const images=[...await commonsImages(project.topic,24).catch(()=>[])];
+      const sourceTitles=[...new Set(sources.map(x=>cleanText(x.title)).filter(Boolean))].slice(0,4);
+      for(const title of sourceTitles){
+        if(images.length>=18)break;
+        images.push(...await commonsImages(title,8).catch(()=>[]));
+      }
+      const uniqueImages=[...new Map(images.filter(x=>x?.url).map(x=>[x.url,x])).values()];
+      const videos=await commonsVideos(project.topic,8).catch(()=>[]);
+      return {images:uniqueImages,videos};
     });
     const mediaPool=mediaCached.value.images||[], videoPool=mediaCached.value.videos||[];
     stageMetric(metrics,'mediaDiscoverySeconds',mediaStarted);

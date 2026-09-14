@@ -34,6 +34,7 @@ export function narrationQuality(text,{beat='context'}={}){
   if(!/[.!?]$/.test(t))score-=3;
   if(beat==='hook'&&!/[?!]|\b(but|until|except|actually|hidden|missed|why|how)\b|\b\d{2,4}\b/i.test(t))score-=12;
   if(beat==='payoff'&&!/\b(so|because|therefore|ultimately|result|changed|meant|shows|explains|response|responded|led|passed|act|law|policy)\b/i.test(t))score-=10;
+  if(/\b(?:the|a|an|of|to|from|with|including|great|clean|led|caused|became|remained)\.$/i.test(t))score-=30;
   return Math.max(0,Math.round(score));
 }
 export function sceneAcceptance(score,beat='context'){
@@ -49,7 +50,7 @@ export function repairNarration(scenes=[],sources=[],topic=''){
   const used=new Set();
   const validFact=f=>{
     const text=clean(f.text), words=text.split(/\s+/).filter(Boolean);
-    if(words.length<7||words.length>16)return false;
+    if(words.length<7||words.length>18)return false;
     if((text.match(/\(/g)||[]).length!==(text.match(/\)/g)||[]).length)return false;
     if((text.match(/"/g)||[]).length%2)return false;
     return true;
@@ -59,6 +60,7 @@ export function repairNarration(scenes=[],sources=[],topic=''){
     const reasons=[]; let candidate=original, sourceIndex=scene.sourceIndex;
     if(scene.beat==='hook'&&narrationQuality(original,{beat:'hook'})<75)reasons.push('weak-hook');
     if(scene.beat==='payoff'&&narrationQuality(original,{beat:'payoff'})<75)reasons.push('weak-payoff');
+    if(narrationQuality(original,{beat:scene.beat})<75&&!reasons.length)reasons.push('weak-narration');
     if(i>0&&overlap(original,prev)>=4)reasons.push('repetitive');
     if(reasons.length){
       const options=facts.filter(f=>!used.has(f.text)&&validFact(f)&&overlap(f.text,prev)<4);
