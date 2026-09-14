@@ -32,3 +32,10 @@ Every project now writes `generation-prompts.json` with a 9:16 visual prompt, mo
 ## Generative provider handoff
 Each completed storyboard now produces `generation-prompts.json` plus `generative-queue.json`. The queue is provider-agnostic and contains one 9:16 image-to-video request per scene, including visual prompt, motion prompt, duration, negative prompt and free-only routing policy. External AI generation remains plan-only until a provider is both configured and explicitly verified as free. Paid fallback is never automatic.
 
+
+## Local AI director and styles
+- Ollama runs as an isolated CPU service with `qwen3:1.7b` for fast storyboard work and `qwen3:4b` available for stronger local tasks.
+- Text routing order is Ollama -> OpenRouter free-only -> NVIDIA only when explicitly generation-verified. Paid fallback is disabled.
+- Higgsfield is represented as a connector handoff; the VPS does not spend Higgsfield credits automatically.
+- Video styles: Documentary, Cinematic, and Whiteboard animation. Whiteboard uses the CPU-only `whiteboard-animator` engine and renders each scene with narration/captions.
+- Generative media providers remain disabled until a no-charge generation path is verified at the actual generation endpoint.

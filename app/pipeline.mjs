@@ -1,4 +1,4 @@
-import { freeRouter } from './free-router.mjs';
+import { completeText } from './text-router.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -97,7 +97,7 @@ export async function researchTopic(topic){
   return sources.slice(0,8);
 }
 
-export function buildStoryboard({topic,niche,duration,sources}){
+export function buildStoryboard({topic,niche,duration,sources,style='documentary'}){
   const targetScenes=Number(duration||60)<=30?8:Number(duration||60)<=60?14:20;
   const facts=sources.flatMap(s=>sentences(s.extract));
   const hookByNiche={
@@ -120,12 +120,12 @@ export function buildStoryboard({topic,niche,duration,sources}){
     const beatName=beat(i), shotType=shotByBeat[beatName];
     const clean=narration.split(/\s+/).slice(0,22).join(' ');
     return {
-      index:i+1, beat:beatName, shotType,
+      index:i+1, beat:beatName, shotType, style,
       narration:clean,
       overlay:(i===0?hook:narration).replace(/\s+/g,' ').slice(0,95),
       searchQuery:`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`,
-      visualPrompt:`Vertical cinematic ${shotType} about ${topic}. Historically/contextually accurate, documentary style, no visible text, 9:16 composition. Scene fact: ${clean}`,
-      motionPrompt:i%3===0?'slow cinematic push-in with subtle parallax':i%3===1?'controlled lateral pan with restrained documentary motion':'slow pull-back revealing contextual detail',
+      visualPrompt:style==='whiteboard'?`Clean whiteboard marker illustration explaining ${topic}; simple dark ink strokes on white background, educational diagram feel, no watermark. Scene fact: ${clean}`:`Vertical ${style==='cinematic'?'cinematic':'documentary'} ${shotType} about ${topic}. Historically/contextually accurate, ${style} style, no visible text, 9:16 composition. Scene fact: ${clean}`,
+      motionPrompt:style==='whiteboard'?'progressive hand-drawn ink reveal with readable hold':(i%3===0?'slow cinematic push-in with subtle parallax':i%3===1?'controlled lateral pan with restrained documentary motion':'slow pull-back revealing contextual detail'),
       camera:i%3===0?'slow push in':i%3===1?'gentle pan':'slow zoom out',
       durationHint:Number((Number(duration||60)/targetScenes).toFixed(2)),
       assets:[]
@@ -213,8 +213,22 @@ export function candidateScore(result,scene){
   return Math.round(clamp(45+licensed*4+Math.min(20,relevance)+diversity+motion,0,100));
 }
 
+async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
+  const wav=sharedNarration?.wav||path.join(sceneDir,'voice.wav');
+  const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint);
+  const ts=(sec)=>{const ms=Math.max(0,Math.round(sec*1000));const h=String(Math.floor(ms/3600000)).padStart(2,'0'),m=String(Math.floor(ms%3600000/60000)).padStart(2,'0'),ss=String(Math.floor(ms%60000/1000)).padStart(2,'0'),mmm=String(ms%1000).padStart(3,'0');return `${h}:${m}:${ss},${mmm}`;};
+  const srt=path.join(sceneDir,'captions.srt');fs.writeFileSync(srt,`1\n${ts(0)} --> ${ts(duration)}\n${scene.narration}\n`);
+  const output=path.join(sceneDir,'scene.mp4'), board=path.join(sceneDir,'board.png');
+  const spec={title:String(title||'Whiteboard Short'),text:scene.narration,scene:scene.index,width:720,height:1280,duration,audio:wav,output,boardOutput:board,captions:'captions.srt',preset:'veryfast',crf:24};
+  fs.writeFileSync(path.join(sceneDir,'whiteboard.json'),JSON.stringify(spec));
+  const python=process.env.WHITEBOARD_PYTHON||'/opt/whiteboard/bin/python', adapter=process.env.WHITEBOARD_ADAPTER||'/app/python/whiteboard_scene.py';
+  const raw=await run(python,[adapter,'--spec','whiteboard.json'],{cwd:sceneDir,env:{...process.env,FFMPEG_PATH:'ffmpeg',RENDER_THREADS:'2'}});
+  let whiteboard={};try{whiteboard=JSON.parse(raw.trim().split('\n').at(-1))}catch{}
+  return {...scene,duration:Number(duration.toFixed(2)),assets:[{title:'Generated whiteboard board',source:'local',license:'original',artist:'Viral Shorts Studio',type:'whiteboard',file:'board.png'}],file:output,captions:srt,hasRealVideo:false,whiteboard,narrationReused:!!sharedNarration,candidateScore:88};
+}
+
 async function makeSceneCandidates(scene,dir,fallbackQuery,mediaPool,videoPool,count=1){
-  const total=clamp(Number(count)||1,1,4), results=[];
+  const total=scene.style==='whiteboard'?1:clamp(Number(count)||1,1,4), results=[];
   let sharedNarration=null;
   if(total>1){
     const sharedDir=ensure(path.join(dir,'candidates',`scene-${String(scene.index).padStart(2,'0')}`,'shared'));
@@ -235,6 +249,7 @@ async function makeSceneCandidates(scene,dir,fallbackQuery,mediaPool,videoPool,c
 async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],sharedNarration=null){
   const sceneDir=ensure(path.join(dir,`scene-${String(scene.index).padStart(2,'0')}`));
   const variant=Math.max(0,Number(scene.variantSeed||0));
+  if(scene.style==='whiteboard') return makeWhiteboardScene(scene,sceneDir,fallbackQuery,sharedNarration);
   const poolStart=Math.max(0,((scene.index-1)*2 + variant*3) % Math.max(1,mediaPool.length));
   const candidates=[...mediaPool.slice(poolStart,poolStart+4),...await commonsImages(`${scene.searchQuery} ${variant?`variation ${variant}`:''}`.trim(),8).catch(()=>[])];
   if(candidates.length<6) candidates.push(...await commonsImages(scene.searchQuery.split(' ').slice(0,4).join(' '),8).catch(()=>[]));
@@ -312,17 +327,21 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     stageMetric(metrics,'researchSeconds',researchStarted);
     update({sources,researchCacheHit,progress:15,status:'storyboarding',metrics});
     let storyboard=project.storyboard?.length?project.storyboard:buildStoryboard({...project,sources});
-    if(!project.storyboard?.length && freeRouter.status().enabled){
+    if(!project.storyboard?.length){
       try{
         const count=storyboard.length;
-        const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x.narration==='string'&&x.narration.length>20&&x.narration.length<=420&&typeof x.overlay==='string'&&x.overlay.length<=95&&Number.isInteger(x.sourceIndex)&&sources[x.sourceIndex]);}catch{return false;}};
-        const text=await freeRouter.complete({target:count*35,validate,messages:[
-          {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. Keep each narration 20-35 words and overlay under 95 characters.'},
-          {role:'user',content:JSON.stringify({topic:project.topic,sceneCount:count,sources})}
+        const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
+        const compactSources=sources.map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,900)}));
+        const completion=await completeText({target:count*55,validate,messages:[
+          {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. Keep each narration concise at 8-14 words so it fits a fast vertical short. Keep overlay under 72 characters.'},
+          {role:'user',content:JSON.stringify({topic:project.topic,sceneCount:count,sources:compactSources})}
         ]});
-        const ai=JSON.parse(text);storyboard=storyboard.map((scene,i)=>({...scene,...ai[i]}));
-        update({scriptProvider:'free-cloud'});
-      }catch{update({scriptProvider:'source-extracts',providerWarning:'Free cloud unavailable; using cited source excerpts.'});}
+        const text=completion.text; const ai=JSON.parse(text).map((x,i)=>({...x,sourceIndex:Number.isInteger(x.sourceIndex)&&sources[x.sourceIndex]?x.sourceIndex:i%sources.length,narration:String(x.narration||'').trim().slice(0,420),overlay:String(x.overlay||x.narration||'').trim().slice(0,95)}));storyboard=storyboard.map((scene,i)=>({...scene,...ai[i]}));
+        update({scriptProvider:completion.provider,scriptModel:completion.model});
+      }catch(error){
+        const reason=(error?.failures||[]).map(x=>`${x.id}:${x.error}`).join('; ').slice(0,240);
+        update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
+      }
     }
     const mediaStarted=nowMs();
     const cacheKey=`${project.topic}|media-v2`;
@@ -332,7 +351,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     });
     const mediaPool=mediaCached.value.images||[], videoPool=mediaCached.value.videos||[];
     stageMetric(metrics,'mediaDiscoverySeconds',mediaStarted);
-    const generationPlan={version:1,aspect:'9:16',duration:Number(project.duration),freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
+    const generationPlan={version:2,aspect:'9:16',duration:Number(project.duration),style:project.style||'documentary',freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
     saveJson(path.join(dir,'generation-prompts.json'),generationPlan);
     project.generationPlan=generationPlan;
     const generativeQueue=writeGenerationQueue(project,dir);

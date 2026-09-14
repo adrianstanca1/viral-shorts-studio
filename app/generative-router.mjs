@@ -10,6 +10,10 @@ export function providerConfig(env=process.env){
     freeOnly: true,
     paidFallback: false,
     providers: [
+      {id:'ollama', enabled:env.OLLAMA_ENABLED!=='false', configured:true, verifiedFree:true, mode:'local', tasks:['text','storyboard','qa']},
+      {id:'openrouter', enabled:safeBool(env.OPENROUTER_ENABLED), configured:Boolean(env.OPENROUTER_API_KEY||env.OPENROUTER_KEY), verifiedFree:safeBool(env.OPENROUTER_ENABLED), mode:'zero-price-only', tasks:['text','storyboard']},
+      {id:'nvidia', enabled:safeBool(env.NVIDIA_ENABLED), configured:Boolean(env.NVIDIA_API_KEY), verifiedFree:false, mode:'disabled-unverified-generation', tasks:['text','vision','text-to-image']},
+      {id:'higgsfield', enabled:false, configured:false, verifiedFree:false, mode:'connector-handoff', tasks:['text-to-video','image-to-video']},
       {id:'huggingface', enabled:safeBool(env.HF_GENERATION_ENABLED), configured:Boolean(env.HF_TOKEN||env.HF_KEY), verifiedFree:safeBool(env.HF_FREE_VERIFIED), tasks:['text-to-image','image-to-video']},
       {id:'fal', enabled:safeBool(env.FAL_GENERATION_ENABLED), configured:Boolean(env.FAL_KEY), verifiedFree:safeBool(env.FAL_FREE_VERIFIED), tasks:['text-to-image','image-to-video','text-to-video']},
     ]

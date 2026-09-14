@@ -1,0 +1,2 @@
+# CPU-only engine requested by the user. Do not install the optional Gemini extra.
+whiteboard-animator==0.1.1

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { produceProject, mediaProviderStatus } from './pipeline.mjs';
+import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
 
 const app = express();
@@ -12,6 +13,7 @@ app.use(express.static(new URL('./public', import.meta.url).pathname));
 const PORT = Number(process.env.PORT || 3010);
 const DATA = process.env.DATA_DIR || '/app/data';
 const niches = ['true-crime','history','storytelling','fact-check'];
+const styles = ['documentary','cinematic','whiteboard'];
 const jobs = new Map();
 let active=false;
 function kick(){
@@ -28,7 +30,7 @@ function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id)
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
-app.get('/api/providers',(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus()}));
+app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus()}));
 app.get('/api/stats',(req,res)=>{
   const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
@@ -38,6 +40,7 @@ app.get('/api/capabilities',(req,res)=>res.json({
   niches,
   stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','candidate-generation','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa'],
   formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes'],
+  styles,
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],
   optionalProviders:['Pexels','Pixabay','OpenRouter','Tavily','fal.ai','future image-to-video adapters'],
   policy:['cite sources','preserve asset credits','approval before publishing','do not fabricate real-crime claims']
@@ -50,7 +53,8 @@ app.post('/api/projects',(req,res)=>{
   if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)return res.status(429).json({error:'Queue full; retry after a project finishes'});
   if(body.duration!==undefined && (![30,60,90].includes(Number(body.duration))))return res.status(400).json({error:'Choose 30 seconds, 1 minute, or 1 minute 30 seconds'});
   const niche=niches.includes(body.niche)?body.niche:'storytelling';
-  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,topic,duration:Number(body.duration||60),autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
+  const style=styles.includes(body.style)?body.style:'documentary';
+  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,topic,duration:Number(body.duration||60),autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
   save(job); res.status(202).json(job);
   setImmediate(kick);
 });
