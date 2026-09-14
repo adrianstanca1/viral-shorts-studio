@@ -46,3 +46,10 @@ The `hybrid` style automatically produces archival/motion and whiteboard candida
 
 ### Verified-free AI candidate bridge
 External generation connectors can register a completed HTTPS image/video against a scene through the local API. Only records explicitly marked `verifiedFree: true` are accepted. Imported AI candidates are rendered with the scene narration/overlay and scored alongside archive-motion and whiteboard alternatives. Higgsfield, NVIDIA, Hugging Face and fal remain disabled for autonomous paid-capable calls until a no-charge path is verified per job.
+
+## Provider job harvesting
+Verified-free external generation jobs can now be registered as pending, resolved by a connector/webhook, and imported automatically into the scene candidate pool. Resolving a completed job queues only the affected scene for regeneration, preserving previous variants and keeping `paidFallback=false`.
+
+Endpoints: `POST /api/provider-jobs`, `GET /api/provider-jobs/:id`, `POST /api/provider-jobs/:id/resolve`, and `POST /api/provider-jobs/:id/fail`.
+
+The bridge keeps provider billing outside the render worker: connector jobs are accepted only after an explicit no-charge/free grant is used, then their HTTPS result is registered to a scene. This prevents the autonomous VPS from silently spending credits while still letting AI footage compete in the normal candidate scorer.

@@ -7,6 +7,7 @@ import { produceProject, mediaProviderStatus } from './pipeline.mjs';
 import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
 import { registerAiCandidate, listAiCandidates, aiCandidateStatus } from './ai-candidate-router.mjs';
+import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus } from './provider-job-router.mjs';
 
 const app = express();
 app.use(express.json({limit:'2mb'}));
@@ -31,7 +32,7 @@ function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id)
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
-app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus()}));
+app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA)}));
 app.get('/api/stats',(req,res)=>{
   const all=list(), completed=all.filter(x=>x.status==='complete'), failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0); const avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
@@ -46,6 +47,10 @@ app.get('/api/capabilities',(req,res)=>res.json({
   optionalProviders:['Pexels','Pixabay','OpenRouter','Tavily','fal.ai','future image-to-video adapters'],
   policy:['cite sources','preserve asset credits','approval before publishing','do not fabricate real-crime claims']
 }));
+
+app.get('/api/provider-jobs',(req,res)=>res.json(providerJobStatus(DATA)));
+app.get('/api/provider-jobs/:id',(req,res)=>{const j=getProviderJob(DATA,req.params.id);if(!j)return res.status(404).json({error:'not found'});res.json(j)});
+app.post('/api/provider-jobs',(req,res)=>{try{res.status(201).json(createProviderJob(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 
 app.get('/api/projects/:id/ai-candidates',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
@@ -90,6 +95,20 @@ function archiveSceneVariant(j,index){
   const variant={id,index,createdAt:new Date().toISOString(),variantSeed:Number(story?.variantSeed||0),duration:current.duration,assets:current.assets||[],hasRealVideo:!!current.hasRealVideo,file,captions,sourceFile:current.file};
   j.sceneVariants[key].push(variant); return variant;
 }
+
+app.post('/api/provider-jobs/:id/resolve',(req,res)=>{
+  try{
+    const job=resolveProviderJob(DATA,req.params.id,req.body||{});const j=load(job.projectId);if(!j)return res.status(404).json({error:'project not found'});
+    const item=registerAiCandidate(DATA,job.projectId,job.sceneIndex,{provider:job.provider,kind:job.resultKind,url:job.url,prompt:job.prompt,jobId:job.id,verifiedFree:true});
+    if(['complete','failed'].includes(j.status)){
+      archiveSceneVariant(j,job.sceneIndex);const scene=j.storyboard?.find(s=>s.index===job.sceneIndex);if(scene)scene.variantSeed=Number(scene.variantSeed||0)+1;
+      try{fs.rmSync(path.join(projectDir(j.id),`scene-${String(job.sceneIndex).padStart(2,'0')}`),{recursive:true,force:true})}catch{}
+      j.scenes=(j.scenes||[]).filter(s=>s.index!==job.sceneIndex);j.status='queued';j.progress=25;delete j.error;delete j.render;save(j);setImmediate(kick);
+    }
+    res.json({job,item,projectStatus:j.status});
+  }catch(e){res.status(400).json({error:String(e.message||e)})}
+});
+app.post('/api/provider-jobs/:id/fail',(req,res)=>{try{res.json(failProviderJob(DATA,req.params.id,req.body?.error))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 
 app.post('/api/projects/:id/scenes/:index/regenerate',(req,res)=>{
   const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'});
