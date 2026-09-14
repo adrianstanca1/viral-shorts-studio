@@ -52,7 +52,10 @@ const plan=buildAiGenerationPlan(project,{allowance:2,maxScenes:2,minScore:82,pr
 assert.deepEqual(plan.selected.map(x=>x.index),[1,3]);
 assert.equal(plan.freeOnly,true);assert.equal(plan.paidFallback,false);
 const status=providerJobStatus(root);assert.equal(status.counts.ready,1);assert.equal(status.counts.failed,1);assert.equal(status.counts.expired,1);
-const {writePhraseCaptions}=await import('./pipeline.mjs');
+const {writePhraseCaptions,visualAssetScore,candidateScore}=await import('./pipeline.mjs');
+const visualScene={beat:'hook',searchQuery:'Great Smog London 1952 streets',overlay:'Great Smog London',narration:'London was covered by deadly smog in 1952.',sourceTitle:'Great Smog of London'};
+assert.ok(visualAssetScore({title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'},visualScene)>visualAssetScore({title:'Generic flag icon',artist:'',license:'CC0',type:'image',source:'https://example.com'},visualScene));
+assert.ok(candidateScore({assets:[{title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'}],hasRealVideo:false,visualType:'archive-motion'},visualScene)>=50);
 const captionFile=path.join(root,'phrase-captions.srt');writePhraseCaptions(captionFile,'One two three four five six seven eight',4,{wordsPerCue:4});
 const captionText=fs.readFileSync(captionFile,'utf8');assert.match(captionText,/00:00:00,000 --> 00:00:02,000/);assert.match(captionText,/One two three four/);assert.match(captionText,/five six seven eight/);
 fs.rmSync(root,{recursive:true,force:true});

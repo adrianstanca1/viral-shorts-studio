@@ -62,13 +62,29 @@ function nowMs(){return Date.now();}
 function stageMetric(metrics,name,start){metrics[name]=Number(((Date.now()-start)/1000).toFixed(2));}
 
 function tokens(s=''){return new Set(cleanText(s).toLowerCase().split(/[^a-z0-9]+/).filter(x=>x.length>2));}
-function relevanceScore(asset,scene){
-  const wanted=tokens(`${scene.searchQuery} ${scene.overlay}`), have=tokens(`${asset.title||''} ${asset.artist||''}`);
-  let score=0; for(const t of wanted) if(have.has(t)) score+=3;
-  if(asset.license && asset.license!=='unknown') score+=2;
-  if(asset.type==='video') score+=1;
-  return score;
+const genericVisualTerms=/\b(logo|icon|symbol|coat of arms|flag|emblem|placeholder|stock photo)\b/i;
+export function visualAssetScore(asset,scene){
+  const wanted=tokens(`${scene.searchQuery||''} ${scene.overlay||''} ${scene.narration||''} ${scene.sourceTitle||''}`);
+  const title=String(asset.title||'').replace(/^File:/i,' '),meta=`${title} ${asset.artist||''}`;
+  const have=tokens(meta);let overlap=0;for(const t of wanted)if(have.has(t))overlap++;
+  let score=Math.min(32,overlap*5);
+  if(asset.license&&asset.license!=='unknown')score+=5;
+  if(asset.type==='video')score+=scene.beat==='hook'||scene.beat==='payoff'?8:4;
+  if(genericVisualTerms.test(meta)&&overlap<2)score-=14;
+  if(!overlap&&asset.source!=='local')score-=10;
+  return Math.round(clamp(score,-20,50));
 }
+function relevanceScore(asset,scene){return visualAssetScore(asset,scene);}
+function enrichVisualDirection(storyboard,sources,topic,style){
+  return storyboard.map(scene=>{
+    const source=sources[Number(scene.sourceIndex)]||null,sourceTitle=cleanText(source?.title||'');
+    const fact=cleanText(scene.narration).split(/\s+/).slice(0,10).join(' ');
+    const searchQuery=[topic,sourceTitle,scene.shotType,fact].filter(Boolean).join(' ').slice(0,260);
+    const visualPrompt=style==='whiteboard'?`Clean whiteboard marker illustration explaining ${topic}. ${fact}. Simple dark ink on white, no watermark.`:`Vertical ${style==='cinematic'?'cinematic':'documentary'} ${scene.shotType} for ${topic}. Match this sourced scene fact: ${fact}. Historically/contextually accurate, no visible text, 9:16.`;
+    return {...scene,sourceTitle,searchQuery,visualPrompt};
+  });
+}
+
 
 async function fetchJson(url){
   const r=await fetch(url,{signal:AbortSignal.timeout(20000),headers:{'user-agent':UA}});
@@ -231,12 +247,15 @@ export function candidateScore(result,scene){
   const assets=result.assets||[];
   const titles=new Set(assets.map(a=>String(a.title||'').toLowerCase()));
   const licensed=assets.filter(a=>a.license&&a.license!=='unknown').length;
-  const relevance=assets.reduce((n,a)=>n+relevanceScore(a,scene),0);
-  const diversity=titles.size===assets.length?8:0;
-  const motion=result.hasRealVideo?12:0;
-  const whiteboard=result.visualType==='whiteboard' ? (['evidence','context'].includes(scene.beat)?25:['setup','escalation'].includes(scene.beat)?14:6) : 0;
-  return Math.round(clamp(45+licensed*4+Math.min(20,relevance)+diversity+motion+whiteboard,0,100));
+  const semantic=assets.map(a=>visualAssetScore(a,scene));
+  const bestSemantic=semantic.length?Math.max(...semantic):0,avgSemantic=semantic.length?semantic.reduce((a,b)=>a+b,0)/semantic.length:0;
+  const diversity=titles.size===assets.length?6:0;
+  const motion=result.hasRealVideo?(['hook','payoff'].includes(scene.beat)?14:9):0;
+  const whiteboard=result.visualType==='whiteboard' ? (['evidence','context'].includes(scene.beat)?22:['setup','escalation'].includes(scene.beat)?12:4) : 0;
+  const weakPenalty=bestSemantic<5&&result.visualType!=='whiteboard'?-18:0;
+  return Math.round(clamp(42+licensed*3+Math.min(24,bestSemantic)+Math.min(10,Math.max(0,avgSemantic/2))+diversity+motion+whiteboard+weakPenalty,0,100));
 }
+
 
 async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
   const wav=sharedNarration?.wav||path.join(sceneDir,'voice.wav');
@@ -398,8 +417,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       }
     }
     storyboard=fitNarrationBudget(storyboard,Number(project.duration));
+    storyboard=enrichVisualDirection(storyboard,sources,project.topic,project.style||'documentary');
     storyboard=optimizePacing(storyboard,Number(project.duration));
-    update({storyboard,pacingOptimized:true});
+    update({storyboard,pacingOptimized:true,visualDirectionVersion:2});
     const mediaStarted=nowMs();
     const cacheKey=`${project.topic}|media-v2`;
     const mediaCached=await cachedJson(root,'media',cacheKey,12*60*60*1000,async()=>{
@@ -474,14 +494,16 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const sourceCount=sources.length;
     const sceneQuality=scenes.map(s=>({index:s.index,score:Number(s.candidateScore||0),gate:s.qualityGate||sceneAcceptance(s.candidateScore,storyboard.find(x=>x.index===s.index)?.beat)}));
     const acceptedScenes=sceneQuality.filter(x=>x.gate.accepted).length;
+    const visualScores=sceneQuality.map(x=>x.score),averageVisualScore=visualScores.length?Math.round(visualScores.reduce((a,b)=>a+b,0)/visualScores.length):0;
+    const weakVisualScenes=sceneQuality.filter(x=>x.score<64).map(x=>x.index),visualQualityPercent=Math.round(100*sceneQuality.filter(x=>x.score>=64).length/Math.max(1,sceneQuality.length));
     const retention=retentionAnalysis(scenes);
     const retentionReady=retention.score>=72&&retention.highRiskScenes.length<=Math.max(1,Math.floor(scenes.length*.2));
     const viralityScore=Math.round(clamp(50+(scenes.length>=6?8:0)+(sourceCount>=5?7:0)+(realVideoScenes*3)+(Math.abs(durationDelta)<=0.5?10:0)+(retention.score>=80?12:retention.score>=70?7:0),0,100));
     const slug=project.topic.replace(/[^a-z0-9 ]/gi,' ').trim();
     const publish={title:`${slug}: the part most people miss`.slice(0,90),description:`A fast, source-backed ${project.niche.replace('-', ' ')} short about ${slug}. Verify claims using the included credits before publishing.`,hashtags:['#shorts',`#${project.niche.replace(/-/g,'')}`,'#storytelling']};
     stageMetric(metrics,'totalSeconds',totalStarted);
-    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady;
-    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),viralityScore},publish,metrics,completedAt:new Date().toISOString()});
+    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady&&averageVisualScore>=70&&weakVisualScenes.length<=Math.floor(scenes.length*.25);
+    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
     update({status:'failed',error:String(error.message||error),failedAt:new Date().toISOString()});
