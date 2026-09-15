@@ -17,7 +17,7 @@ import { readVerification, verifyProviders, recordFreeEvidence, consumeFreeAllow
 import { authConfigured, assertLaunchSecurity, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
 import { recoverProjectState, prepareProjectRetry, inferFailureStage, failureIsRecent, classifyRecoverability } from './recovery.mjs';
 import { ensurePublishApproval, decidePublishApproval, invalidatePublishApproval } from './publish-approval.mjs';
-import { buildDistributionPackage, createPublishJob, listPublishJobs, publishQueueSummary, deletePublishJobsForProject, getPublishJob, updatePublishJob, duePublishJobs } from './publishing.mjs';
+import { buildDistributionPackage, createPublishJob, listPublishJobs, publishQueueSummary, deletePublishJobsForProject, getPublishJob, updatePublishJob, duePublishJobs, publishingCalendar } from './publishing.mjs';
 import { youtubePublisherStatus, uploadYouTubeVideo } from './youtube-publisher.mjs';
 import { googleOAuthStatus, beginGoogleOAuth, finishGoogleOAuth, googleLoginAuthorized, pairGoogleOwner, saveYouTubeGrant, saveYouTubeAnalyticsGrant, youtubeCredentialEnv, youtubeAnalyticsCredentialEnv } from './google-oauth.mjs';
 import { saveGoogleOAuthClientAuthenticated, googleSetupPage, googleSetupSuccessPage } from './google-setup.mjs';
@@ -30,11 +30,12 @@ import { listProducts, getProduct, createProduct } from './product-studio.mjs';
 import { listSites, getSite, createSite } from './website-studio.mjs';
 import { creatorTools, planCreatorGoal } from './creator-agent.mjs';
 import { listRuns, getRun, findRunByIdempotency, createRun, updateRun, syncRunWithProjects } from './creator-runs.mjs';
-import { buildCreatorAnalytics, recordAnalyticsSnapshot, readAnalytics, listExperiments, createExperiment, updateExperiment } from './creator-analytics.mjs';
+import { buildCreatorAnalytics, recordAnalyticsSnapshot, readAnalytics, listExperiments, createExperiment, updateExperiment, experimentInsights } from './creator-analytics.mjs';
 import { modelRecommendationPolicy } from './model-recommendations.mjs';
 import { youtubeAnalyticsStatus, fetchYouTubeAnalytics } from './youtube-analytics.mjs';
 import { buildCapacityBenchmark, saveCapacityBenchmark } from './capacity-benchmark.mjs';
 import { buildRepurposePack } from './repurpose.mjs';
+import { scoreContentOpportunities } from './content-opportunities.mjs';
 import { clipPlan, ensureAspectVariant, ensureClip } from './repurpose-media.mjs';
 import { recordProviderSmoke, providerSmokeSummary } from './provider-smoke.mjs';
 
@@ -133,6 +134,8 @@ app.get('/api/capacity-benchmark',(req,res)=>{const result=buildCapacityBenchmar
 app.get('/api/experiments',(req,res)=>res.json({experiments:listExperiments(DATA)}));
 app.post('/api/experiments',(req,res)=>{try{const projectId=String(req.body?.projectId||'');if(!load(projectId))return res.status(404).json({error:'project not found'});res.status(201).json(createExperiment(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.patch('/api/experiments/:id',(req,res)=>{try{res.json(updateExperiment(DATA,req.params.id,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/experiments/insights',(req,res)=>res.json(experimentInsights(DATA)));
+app.get('/api/analytics/opportunities',async(req,res)=>{const env=youtubeAnalyticsCredentialEnv(DATA),status=youtubeAnalyticsStatus(env);let youtube=null,error=null;if(status.enabled){try{youtube=await fetchYouTubeAnalytics({days:Number(req.query.days||28),env})}catch(e){error=String(e.message||e).slice(0,240)}}res.json({...scoreContentOpportunities(list(),youtube,experimentInsights(DATA)),youtubeAnalytics:{status,error}})});
 app.get('/api/dashboard',async(req,res)=>{try{const all=list(),providerSnapshot=providerJobsSnapshot(DATA),diagnostics=await diagnosticsSnapshot(all,providerSnapshot);res.json({health:{status:'ok',service:'viral-shorts-studio',mode:'autonomous-production'},projects:all.map(projectSummary),stats:statsSnapshot(all),providerJobs:{counts:providerSnapshot.counts,total:providerSnapshot.total,providers:providerSnapshot.providers,jobs:providerSnapshot.jobs.slice(0,100)},publishQueue:publishQueueSummary(DATA),publishingConnectors:{google:googleOAuthStatus(DATA),youtube:youtubePublisherStatus(youtubeCredentialEnv(DATA)),youtubeAnalytics:youtubeAnalyticsStatus(youtubeAnalyticsCredentialEnv(DATA))},providerVerification:{state:readVerification(DATA),worker:providerWorkerInventory(DATA)},diagnostics})}catch{res.status(500).json({error:'dashboard unavailable'})}});
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
@@ -363,6 +366,18 @@ app.get('/api/projects/:id/scenes/:index/video',(req,res)=>{
   if(!scene?.file||!fs.existsSync(scene.file))return res.status(404).json({error:'scene video not ready'});
   res.sendFile(scene.file);
 });
+app.post('/api/projects/:id/scenes/reorder',(req,res)=>{
+  const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});
+  const current=(j.storyboard||[]).map(x=>x.index),order=(Array.isArray(req.body?.order)?req.body.order:[]).map(Number);if(order.length!==current.length||new Set(order).size!==current.length||current.some(x=>!order.includes(x)))return res.status(400).json({error:'order must contain every scene exactly once'});
+  const rank=new Map(order.map((x,i)=>[x,i]));j.storyboard=[...(j.storyboard||[])].sort((a,b)=>rank.get(a.index)-rank.get(b.index));j.scenes=[...(j.scenes||[])].sort((a,b)=>(rank.get(a.index)??9999)-(rank.get(b.index)??9999));j.sequenceUpdatedAt=new Date().toISOString();j.status='queued';j.progress=85;delete j.error;delete j.render;invalidatePublishApproval(j,'scene-order-changed',{required:REQUIRE_PUBLISH_APPROVAL});save(j);setImmediate(kick);res.status(202).json({id:j.id,status:j.status,order,publishApproval:j.publishApproval});
+});
+app.post('/api/projects/:id/scenes/bulk',(req,res)=>{
+  const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});
+  const indexes=[...new Set((Array.isArray(req.body?.indexes)?req.body.indexes:[]).map(Number).filter(Number.isInteger))],action=String(req.body?.action||'regenerate');if(!indexes.length)return res.status(400).json({error:'indexes are required'});const scenes=indexes.map(i=>j.storyboard?.find(x=>x.index===i));if(scenes.some(x=>!x))return res.status(404).json({error:'one or more scenes were not found'});
+  if(action==='style'){const style=String(req.body?.style||'');if(!styles.includes(style))return res.status(400).json({error:'unsupported style'});for(const scene of scenes)scene.style=style;}else if(action!=='regenerate')return res.status(400).json({error:'unsupported bulk action'});
+  for(const scene of scenes){archiveSceneVariant(j,scene.index);scene.variantSeed=Number(scene.variantSeed||0)+1;const dir=path.join(projectDir(j.id),`scene-${String(scene.index).padStart(2,'0')}`);try{fs.rmSync(dir,{recursive:true,force:true})}catch{}}
+  j.scenes=(j.scenes||[]).filter(x=>!indexes.includes(x.index));j.status='queued';j.progress=25;delete j.error;delete j.render;invalidatePublishApproval(j,action==='style'?'scene-style-changed':'scenes-regenerated',{required:REQUIRE_PUBLISH_APPROVAL});save(j);setImmediate(kick);res.status(202).json({id:j.id,status:j.status,indexes,action,publishApproval:j.publishApproval});
+});
 app.patch('/api/projects/:id/scenes/:index',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
   if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});
@@ -404,6 +419,7 @@ app.get('/api/projects/:id/repurpose/aspect/:aspect',async(req,res)=>{const j=lo
 app.get('/api/projects/:id/repurpose/clips/:clip/video',async(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});if(j.status!=='complete')return res.status(409).json({error:'project must be complete before clip extraction'});try{const out=await ensureClip(DATA,j,Number(req.params.clip));if(req.query.download==='1')return res.download(out.file,downloadName(j,`clip-${out.clip.index}.mp4`));res.sendFile(out.file)}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/publishing/connectors',(req,res)=>res.json({google:googleOAuthStatus(DATA),youtube:youtubePublisherStatus(youtubeCredentialEnv(DATA)),youtubeAnalytics:youtubeAnalyticsStatus(youtubeAnalyticsCredentialEnv(DATA))}));
 app.get('/api/publish-jobs',(req,res)=>res.json({summary:publishQueueSummary(DATA),jobs:listPublishJobs(DATA,{projectId:String(req.query.projectId||''),status:String(req.query.status||'')}).slice(0,100)}));
+app.get('/api/publishing/calendar',(req,res)=>res.json(publishingCalendar(DATA,{days:Number(req.query.days||30),conflictMinutes:Number(req.query.conflictMinutes||30)})));
 app.post('/api/projects/:id/publish-jobs',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});try{res.status(201).json(createPublishJob(DATA,j,req.body||{}))}catch(e){res.status(409).json({error:String(e.message||e)})}});
 const publishingExecutions=new Set();
 async function executeYouTubePublishJob(job){

@@ -40,3 +40,10 @@ export function publishQueueSummary(root){
   return {total:jobs.length,counts,externalPostingEnabled:false,mode:'approval-gated-connector-ready'};
 }
 export function deletePublishJobsForProject(root,projectId){const state=read(root),before=state.jobs.length;state.jobs=state.jobs.filter(x=>x.projectId!==projectId);if(state.jobs.length!==before)write(root,state);return before-state.jobs.length;}
+
+export function publishingCalendar(root,{days=30,now=Date.now(),conflictMinutes=30}={}){
+  const horizon=now+Math.max(1,Math.min(180,Number(days||30)))*86400000,windowMs=Math.max(5,Number(conflictMinutes||30))*60000;
+  const jobs=read(root).jobs.filter(x=>x.scheduledAt&&Date.parse(x.scheduledAt)>=now&&Date.parse(x.scheduledAt)<=horizon).sort((a,b)=>Date.parse(a.scheduledAt)-Date.parse(b.scheduledAt)).map(x=>({id:x.id,projectId:x.projectId,platform:x.platform,status:x.status,scheduledAt:x.scheduledAt,title:x.package?.title||''}));
+  const conflicts=[];for(let i=0;i<jobs.length;i++)for(let j=i+1;j<jobs.length;j++){const delta=Math.abs(Date.parse(jobs[j].scheduledAt)-Date.parse(jobs[i].scheduledAt));if(delta>windowMs)break;if(jobs[i].platform===jobs[j].platform)conflicts.push({platform:jobs[i].platform,a:jobs[i].id,b:jobs[j].id,minutesApart:Number((delta/60000).toFixed(1))});}
+  return {generatedAt:new Date().toISOString(),days:Number(days||30),jobs,conflicts,conflictWindowMinutes:Number(conflictMinutes||30)};
+}

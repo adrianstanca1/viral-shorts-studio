@@ -6,8 +6,8 @@ Turn the launch-ready Creator OS into a stronger editing, repurposing and optimi
 ## V2.1 Creator Timeline / Editor
 - [x] Add safe scene text editing for narration, overlay and visual search query.
 - [x] Re-render only the edited scene and invalidate prior publish approval.
-- [ ] Add scene ordering controls with narrative/credit integrity checks.
-- [ ] Add multi-select scene regeneration and bulk style changes.
+- [x] Add scene ordering controls using stable scene IDs while preserving source/credit associations.
+- [x] Add multi-scene regeneration and bulk style changes through a guarded API.
 
 ## V2.2 Repurposing
 - [x] Generate platform-specific repurpose packs from approved or completed projects.
@@ -18,13 +18,13 @@ Turn the launch-ready Creator OS into a stronger editing, repurposing and optimi
 ## V2.3 Publishing UX
 - [x] Keep scheduled publishing represented in persistent publish jobs.
 - [x] Add owner-controlled automatic execution of due YouTube jobs behind an explicit opt-in flag.
-- [ ] Add calendar view and conflict detection for scheduled content.
+- [x] Add publishing calendar API and conflict detection for scheduled content.
 
 ## V2.4 Optimization
 - [x] Track title/thumbnail experiments.
 - [x] Add Creator analytics and recommendations.
-- [ ] Connect experiment winners back into future title/thumbnail suggestions.
-- [ ] Add channel-level content opportunity scoring when YouTube Analytics is authorized.
+- [x] Connect completed experiment winners into owner-reviewed optimization suggestions.
+- [x] Add content opportunity scoring with optional read-only YouTube momentum when authorized.
 
 ## V2.5 Advanced Motion
 - [x] Record Hugging Face model candidates for future verified-free routing.
