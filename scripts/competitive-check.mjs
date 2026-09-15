@@ -91,6 +91,8 @@ const checks=[
   ['guarded maintenance preview',server.includes("/api/system-loop/maintenance-preview")&&operationalHealth.includes('maintenancePreview')],
   ['V21 tracked work complete',!/^\s*- \[ \]/m.test(v21)],
   ['state-bound maintenance confirmation',operationalHealth.includes('previewToken')&&operationalHealth.includes('maintenancePreviewMatches')&&server.includes('preview is missing or stale')],
+  ['health failure window passthrough',server.includes('failureWindowMinutes:Number(req.query.failureWindowMinutes||60)')],
+  ['guarded execution claims before side effects',/completedExecutionForBacklog\(DATA,item\.id\)[\s\S]*?decideBacklogItem\(DATA,item\.id,'in-progress'\)[\s\S]*?queueVideoProject/.test(server)&&/recordExecution\(DATA,\{backlogId:item\.id,type:item\.type,status:'completed'[\s\S]*?decideBacklogItem\(DATA,item\.id,'done'\)/.test(server)],
   ['V22 tracked work complete',!/^\s*- \[ \]/m.test(v22)]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);
