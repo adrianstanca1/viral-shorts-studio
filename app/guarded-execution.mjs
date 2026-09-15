@@ -11,3 +11,8 @@ export function validateBacklogExecution(item,{loadProject=()=>null}={}){
 }
 
 export function guardedExecutionTypes(){return [...supportedTypes]}
+
+export function guardedBatchCandidates(items=[],{limit=2,max=3}={}){
+  const cap=Math.max(0,Math.min(Number(max||3),Number(limit||0)));
+  return [...items].slice(0,cap);
+}

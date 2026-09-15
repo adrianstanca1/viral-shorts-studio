@@ -94,6 +94,7 @@ const checks=[
   ['health failure window passthrough',server.includes('failureWindowMinutes:Number(req.query.failureWindowMinutes||60)')],
   ['guarded execution validates before claim',server.includes("validateBacklogExecution(item,{loadProject:load});decideBacklogItem(DATA,item.id,'in-progress')")&&guardedExecution.includes('supportedTypes')&&guardedExecution.includes('source project not found')],
   ['guarded execution journals before done',/recordExecution\(DATA,\{backlogId:item\.id,type:item\.type,status:'completed'[\s\S]*?decideBacklogItem\(DATA,item\.id,'done'\)/.test(server)],
+  ['bounded guarded batch attempts',server.includes('candidates=guardedBatchCandidates(ready,{limit:available,max:3})')&&server.includes('failedAttemptsConsumeCapacity:true')&&guardedExecution.includes('guardedBatchCandidates')],
   ['V22 tracked work complete',!/^\s*- \[ \]/m.test(v22)]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);
