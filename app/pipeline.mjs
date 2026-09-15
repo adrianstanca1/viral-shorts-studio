@@ -45,7 +45,9 @@ export function writePhraseCaptions(file,text,duration,{wordsPerCue=4}={}){
   }
   fs.writeFileSync(file,cues.join('\n'));return file;
 }
-const captionFilter=file=>`subtitles=${file}:force_style='FontName=DejaVu Sans,FontSize=20,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=3,Shadow=1,Alignment=2,MarginV=110'`;
+const captionStyles={bold:'FontName=DejaVu Sans,FontSize=20,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=3,Shadow=1,Alignment=2,MarginV=110',minimal:'FontName=DejaVu Sans,FontSize=18,Bold=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00202020,Outline=2,Shadow=0,Alignment=2,MarginV=90',documentary:'FontName=DejaVu Sans,FontSize=19,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=2,Shadow=1,Alignment=2,MarginV=95'};
+const captionFilter=(file,style='bold')=>`subtitles=${file}:force_style='${captionStyles[style]||captionStyles.bold}'`;
+export function captionWordsForStyle(style='bold'){return style==='minimal'?7:style==='documentary'?5:4;}
 
 
 function cacheFile(root,kind,key){
@@ -162,7 +164,7 @@ export function sceneCountForDuration(duration=60,mode='multi-scene'){
   return Math.max(20,Math.min(180,Math.ceil(seconds/7.5)));
 }
 
-export function buildStoryboard({topic,niche,duration,sources,style='documentary',mode='multi-scene',language='en',aspect='9:16'}){
+export function buildStoryboard({topic,niche,duration,sources,style='documentary',mode='multi-scene',language='en',aspect='9:16',voice='auto',captionStyle='bold'}){
   const targetScenes=sceneCountForDuration(duration,mode);
   const rankedFacts=rankFacts(topic,sources);
   const narrativeFacts=selectNarrativeFacts(topic,sources,Math.max(targetScenes+2,8));
@@ -197,7 +199,7 @@ export function buildStoryboard({topic,niche,duration,sources,style='documentary
     const narration=item.text,beatName=beat(i),shotType=shotByBeat[beatName];
     const clean=narration.split(/\s+/).slice(0,22).join(' ');
     return {
-      index:i+1,beat:beatName,shotType,style,mode,language,aspect,
+      index:i+1,beat:beatName,shotType,style,mode,language,aspect,voice,captionStyle,
       narration:clean,
       overlay:(i===0?hook:narration).replace(/\s+/g,' ').slice(0,95),
       searchQuery:`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`,
@@ -248,10 +250,11 @@ async function download(url,dest,maxBytes=12_000_000){
   throw last;
 }
 
-async function makeNarration(text,outWav,targetDuration){
+const fliteVoices={en:'slt',fr:'slt',es:'slt',it:'slt',de:'slt'};
+async function makeNarration(text,outWav,targetDuration,{language='en',voice='auto'}={}){
   const safe=text.replace(/[\\':]/g,' ').replace(/\s+/g,' ').slice(0,420);
   const raw=outWav.replace(/\.wav$/,'.raw.wav');
-  await run('ffmpeg',['-y','-f','lavfi','-i',`flite=text='${safe}':voice=slt`,'-ar','44100','-ac','1',raw]);
+  await run('ffmpeg',['-y','-f','lavfi','-i',`flite=text='${safe}':voice=${voice==='auto'?(fliteVoices[language]||'slt'):voice}`,'-ar','44100','-ac','1',raw]);
   const measured=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',raw]))||targetDuration;
   const target=clamp(Number(targetDuration)||measured,3,12);
   let ratio=measured/target;
@@ -308,8 +311,8 @@ export function candidateScore(result,scene){
 
 async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
   const wav=sharedNarration?.wav||path.join(sceneDir,'voice.wav');
-  const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint);
-  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration);
+  const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint,{language:scene.language,voice:scene.voice});
+  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
   const output=path.join(sceneDir,'scene.mp4'), board=path.join(sceneDir,'board.png');
   const spec={title:String(title||'Whiteboard Short'),text:scene.narration,scene:scene.index,width:720,height:1280,duration,audio:wav,output,boardOutput:board,captions:'captions.srt',preset:'veryfast',crf:24};
   fs.writeFileSync(path.join(sceneDir,'whiteboard.json'),JSON.stringify(spec));
@@ -321,16 +324,16 @@ async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
 
 async function makeAiImportedScene(scene,sceneDir,ai,sharedNarration=null){
   const wav=sharedNarration?.wav||path.join(sceneDir,'voice.wav');
-  const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint);
+  const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint,{language:scene.language,voice:scene.voice});
   const media=path.join(sceneDir,ai.kind==='video'?'ai-source.mp4':'ai-source.jpg');
   if(ai.localFile){fs.copyFileSync(ai.localFile,media);}else await download(ai.url,media,ai.kind==='video'?80_000_000:20_000_000);
   const visual=path.join(sceneDir,'ai-visual.mp4');
   if(ai.kind==='video')await makeVideoClip(media,visual,duration);else await makeImageClip(media,visual,duration,true);
   const overlayFile=path.join(sceneDir,'overlay.txt');fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
-  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration);
+  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
   const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.64-text_h/2`;
-  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-t',String(duration),out]);
+  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-t',String(duration),out]);
   const promptTokens=tokens(ai.prompt||''), wanted=tokens(scene.visualPrompt||scene.searchQuery||''); let overlap=0;for(const t of wanted)if(promptTokens.has(t))overlap++;
   const providerBonus=ai.provider==='higgsfield'?10:ai.provider==='nvidia'?8:6, motion=ai.kind==='video'?12:5;
   return {...scene,duration:Number(duration.toFixed(2)),captions:srt,assets:[{title:`AI ${ai.kind} candidate`,source:ai.url,license:'provider-generated',artist:ai.provider,type:`ai-${ai.kind}`,provider:ai.provider,jobId:ai.id}],file:out,hasRealVideo:ai.kind==='video',visualType:`ai-${ai.kind}`,aiProvider:ai.provider,aiJobId:ai.id,narrationReused:!!sharedNarration,candidateScore:Math.round(clamp(62+providerBonus+motion+Math.min(12,overlap*2),0,100))};
@@ -344,7 +347,7 @@ async function makeSceneCandidates(scene,dir,fallbackQuery,mediaPool,videoPool,c
   if(total>1 || hybrid){
     const sharedDir=ensure(path.join(dir,'candidates',`scene-${String(scene.index).padStart(2,'0')}`,'shared'));
     const wav=path.join(sharedDir,'voice.wav');
-    const duration=await makeNarration(scene.narration,wav,scene.durationHint);
+    const duration=await makeNarration(scene.narration,wav,scene.durationHint,{language:scene.language,voice:scene.voice});
     sharedNarration={wav,duration};
   }
   for(const ai of importedAi){
@@ -414,7 +417,7 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
     }
   }
   const wav=sharedNarration?.wav||path.join(sceneDir,'voice.wav');
-  const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint);
+  const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint,{language:scene.language,voice:scene.voice});
   const half=duration/2;
   const c1=path.join(sceneDir,'clip-1.mp4'), c2=path.join(sceneDir,'clip-2.mp4');
   if(motionVideo){
@@ -429,9 +432,9 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   const overlayFile=path.join(sceneDir,'overlay.txt');
   fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
-  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration);
+  const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
   const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.64-text_h/2`;
-  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-t',String(duration),out]);
+  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-t',String(duration),out]);
   const assets=downloaded.map(({local,...a})=>({...a,file:path.basename(local)}));
   if(motionVideo){const {local,...v}=motionVideo;assets.unshift({...v,file:'remote-stream'});}
   return {...scene,duration:Number(duration.toFixed(2)),assets,file:out,captions:srt,hasRealVideo:!!motionVideo,visualType:motionVideo?'archive-video':'archive-motion',narrationReused:!!sharedNarration};
@@ -500,7 +503,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     });
     const mediaPool=mediaCached.value.images||[], videoPool=mediaCached.value.videos||[];
     stageMetric(metrics,'mediaDiscoverySeconds',mediaStarted);
-    const generationPlan={version:3,aspect:project.aspect||'9:16',language:project.language||'en',mode:project.mode||'multi-scene',duration:Number(project.duration),style:project.style||'documentary',freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
+    const generationPlan={version:4,aspect:project.aspect||'9:16',language:project.language||'en',voice:project.voice||'auto',captionStyle:project.captionStyle||'bold',mode:project.mode||'multi-scene',duration:Number(project.duration),style:project.style||'documentary',freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
     saveJson(path.join(dir,'generation-prompts.json'),generationPlan);
     project.generationPlan=generationPlan;
     const generativeQueue=writeGenerationQueue(project,dir);
