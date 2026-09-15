@@ -465,6 +465,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     update({sources,researchCacheHit,progress:15,status:'storyboarding',metrics});
     const storyboardStarted=nowMs();
     let storyboard=project.storyboard?.length?project.storyboard:buildStoryboard({...project,sources});
+    if(project.creatorContext)storyboard=storyboard.map(scene=>({...scene,visualPrompt:`${scene.visualPrompt} | ${project.creatorContext}`.slice(0,2400)}));
     if(!project.storyboard?.length){
       try{
         const count=storyboard.length;

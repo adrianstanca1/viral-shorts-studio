@@ -24,6 +24,7 @@ import { saveGoogleOAuthClientAuthenticated, googleSetupPage, googleSetupSuccess
 import { verifyOwnerPassword, createOwnerRecovery, ownerRecoveryStatus, completeOwnerRecovery } from './owner-auth.mjs';
 import { recoveryPage, recoveryCookie, setRecoveryCookie, clearRecoveryCookie } from './owner-recovery-page.mjs';
 import { imageKinds, listCreatorAssets, createImageBrief, createCharacter, getCharacter } from './creator-assets.mjs';
+import { readBrandBrain, saveBrandBrain, brandPrompt } from './brand-brain.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -124,9 +125,11 @@ app.get('/api/capabilities',(req,res)=>res.json({
 
 
 app.get('/api/creator-assets',(req,res)=>res.json({...listCreatorAssets(DATA),imageKinds:imageKinds()}));
-app.post('/api/image-creations',(req,res)=>{try{res.status(201).json(createImageBrief(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.post('/api/image-creations',(req,res)=>{try{const item=createImageBrief(DATA,req.body||{}),chosen=chooseFreeProvider(DATA,'auto');let providerJob=null;if(chosen&&canQueueFreeProvider(chosen)){providerJob=createProviderJob(DATA,{provider:chosen.id,projectId:`asset-${item.id}`,sceneIndex:1,kind:'image',prompt:item.prompt,verifiedFree:true,priority:55});}res.status(201).json({...item,providerJob,route:chosen?{provider:chosen.id,executable:!!chosen.executable,verifiedFree:!!chosen.verifiedFree}:null})}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.post('/api/characters',(req,res)=>{try{res.status(201).json(createCharacter(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/characters/:id',(req,res)=>{const x=getCharacter(DATA,req.params.id);return x?res.json(x):res.status(404).json({error:'not found'})});
+app.get('/api/brand-brain',(req,res)=>res.json(readBrandBrain(DATA)));
+app.put('/api/brand-brain',(req,res)=>{try{res.json(saveBrandBrain(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/openrouter/free-models',(req,res)=>res.json(readOpenRouterFreeCatalog()));
 app.get('/api/provider-worker/status',(req,res)=>{const f=path.join(DATA,'provider-worker-status.json');if(!fs.existsSync(f))return res.json({state:'offline'});try{res.json(JSON.parse(fs.readFileSync(f,'utf8')))}catch{res.json({state:'invalid'})}});
 app.get('/api/provider-verification',(req,res)=>res.json({state:readVerification(DATA),worker:providerWorkerInventory(DATA)}));
@@ -184,7 +187,10 @@ app.post('/api/projects',(req,res)=>{
   const aspect=aspects.includes(body.aspect)?body.aspect:'9:16';
   const voice=voices.includes(body.voice)?body.voice:'auto';
   const captionStyle=captionStyles.includes(body.captionStyle)?body.captionStyle:'bold';
-  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,mode,language,aspect,voice,captionStyle,topic,duration,autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
+  const character=body.characterId?getCharacter(DATA,String(body.characterId)):null;
+  const brand=readBrandBrain(DATA);
+  const creatorContext=brandPrompt(brand,character);
+  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,mode,language,aspect,voice,captionStyle,characterId:character?.id||null,character:character?{id:character.id,name:character.name}:null,brand:{name:brand.name,version:brand.version},creatorContext,topic,duration,autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
   save(job); res.status(202).json(job);
   setImmediate(kick);
 });
