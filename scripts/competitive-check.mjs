@@ -95,6 +95,10 @@ const checks=[
   ['guarded execution validates before claim',server.includes("validateBacklogExecution(item,{loadProject:load});decideBacklogItem(DATA,item.id,'in-progress')")&&guardedExecution.includes('supportedTypes')&&guardedExecution.includes('source project not found')],
   ['guarded execution journals before done',/recordExecution\(DATA,\{backlogId:item\.id,type:item\.type,status:'completed'[\s\S]*?decideBacklogItem\(DATA,item\.id,'done'\)/.test(server)],
   ['bounded guarded batch attempts',server.includes('candidates=guardedBatchCandidates(ready,{limit:available,max:3})')&&server.includes('failedAttemptsConsumeCapacity:true')&&guardedExecution.includes('guardedBatchCandidates')],
+  ['worker token least privilege',server.includes('workerCanAccess(req.method,req.path)')&&server.includes('provider worker token is not permitted for this route')],
+  ['integration keys owner only',server.includes("app.post('/api/integration-keys',(req,res)=>{if(req.authActor?.type!=='owner')")&&server.includes("app.delete('/api/integration-keys/:id',(req,res)=>{if(req.authActor?.type!=='owner')")],
+  ['provider worker healthcheck',read('compose.yaml').includes('provider-worker-status.json')&&read('compose.yaml').includes('age<90000')],
+  ['durable safe backup coverage',backup.includes('content-portfolio.json')&&backup.includes('voice-studio.json')&&backup.includes('regeneratedAfterRestore')],
   ['V22 tracked work complete',!/^\s*- \[ \]/m.test(v22)]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);

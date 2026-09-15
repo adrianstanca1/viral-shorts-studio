@@ -120,6 +120,12 @@ services:
       - viral-shorts-data:/app/data
     mem_limit: 1g
     cpus: 1
+    healthcheck:
+      test: ["CMD","node","-e","const fs=require('fs');try{const x=JSON.parse(fs.readFileSync('/app/data/provider-worker-status.json','utf8'));const age=Date.now()-Date.parse(x.updatedAt||0);process.exit(Number.isFinite(age)&&age<90000?0:1)}catch{process.exit(1)}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   ollama:
     image: ollama/ollama:latest
