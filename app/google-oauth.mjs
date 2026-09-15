@@ -6,6 +6,7 @@ const AUTH_URL='https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL='https://oauth2.googleapis.com/token';
 const USERINFO_URL='https://openidconnect.googleapis.com/v1/userinfo';
 const YOUTUBE_SCOPE='https://www.googleapis.com/auth/youtube.upload';
+const YOUTUBE_ANALYTICS_SCOPE='https://www.googleapis.com/auth/yt-analytics.readonly';
 const states=new Map();
 const truthy=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 const cleanEmail=v=>String(v||'').trim().toLowerCase();
@@ -29,7 +30,7 @@ export function writeGoogleOAuthStore(root,value){
 export function googleOAuthStatus(root,{env=process.env}={}){
   const store=readGoogleOAuthStore(root),configured=!!(clientId(env,store)&&clientSecret(env,store));
   const allow=allowedEmails(env,store),paired=!!store.owner?.sub;
-  return {configured,loginEnabled:configured&&(allow.length>0||paired||truthy(env.GOOGLE_LOGIN_ALLOW_ANY)),ownerPaired:paired,youtubeConnected:!!store.youtube?.refreshToken,redirectUriConfigured:!!env.GOOGLE_OAUTH_REDIRECT_URI};
+  return {configured,loginEnabled:configured&&(allow.length>0||paired||truthy(env.GOOGLE_LOGIN_ALLOW_ANY)),ownerPaired:paired,youtubeConnected:!!store.youtube?.refreshToken,youtubeAnalyticsConnected:!!store.youtubeAnalytics?.refreshToken,redirectUriConfigured:!!env.GOOGLE_OAUTH_REDIRECT_URI};
 }
 export function googleLoginAuthorized(profile,root,{env=process.env}={}){
   if(!profile?.email_verified)return false;const email=cleanEmail(profile.email),store=readGoogleOAuthStore(root),allow=allowedEmails(env,store);
@@ -44,15 +45,23 @@ export function saveYouTubeGrant(profile,tokens,root){
   if(!tokens?.refresh_token)throw new Error('Google did not return an offline refresh token');
   const store=readGoogleOAuthStore(root);store.youtube={refreshToken:String(tokens.refresh_token),sub:String(profile.sub||''),email:cleanEmail(profile.email),scope:String(tokens.scope||''),connectedAt:new Date().toISOString()};writeGoogleOAuthStore(root,store);return store.youtube;
 }
+
+export function saveYouTubeAnalyticsGrant(profile,tokens,root){
+  if(!tokens?.refresh_token)throw new Error('Google did not return an offline refresh token');
+  const store=readGoogleOAuthStore(root);store.youtubeAnalytics={refreshToken:String(tokens.refresh_token),sub:String(profile.sub||''),email:cleanEmail(profile.email),scope:String(tokens.scope||''),connectedAt:new Date().toISOString()};writeGoogleOAuthStore(root,store);return store.youtubeAnalytics;
+}
+export function youtubeAnalyticsCredentialEnv(root,{env=process.env}={}){
+  const store=readGoogleOAuthStore(root);return {...env,YOUTUBE_ANALYTICS_CLIENT_ID:env.YOUTUBE_ANALYTICS_CLIENT_ID||env.GOOGLE_CLIENT_ID||store.oauthClient?.clientId||'',YOUTUBE_ANALYTICS_CLIENT_SECRET:env.YOUTUBE_ANALYTICS_CLIENT_SECRET||env.GOOGLE_CLIENT_SECRET||store.oauthClient?.clientSecret||'',YOUTUBE_ANALYTICS_REFRESH_TOKEN:env.YOUTUBE_ANALYTICS_REFRESH_TOKEN||store.youtubeAnalytics?.refreshToken||'',YOUTUBE_ANALYTICS_SCOPE:store.youtubeAnalytics?.scope||''};
+}
 export function youtubeCredentialEnv(root,{env=process.env}={}){
   const store=readGoogleOAuthStore(root);return {...env,YOUTUBE_CLIENT_ID:env.YOUTUBE_CLIENT_ID||env.GOOGLE_CLIENT_ID||store.oauthClient?.clientId||'',YOUTUBE_CLIENT_SECRET:env.YOUTUBE_CLIENT_SECRET||env.GOOGLE_CLIENT_SECRET||store.oauthClient?.clientSecret||'',YOUTUBE_REFRESH_TOKEN:env.YOUTUBE_REFRESH_TOKEN||store.youtube?.refreshToken||''};
 }
 export function beginGoogleOAuth({flow,redirectUri,root=null,env=process.env}){
   const store=root?readGoogleOAuthStore(root):{};if(!clientId(env,store)||!clientSecret(env,store))throw new Error('Google OAuth client is not configured');
   purgeStates();const state=b64url(crypto.randomBytes(24)),verifier=b64url(crypto.randomBytes(48));states.set(state,{flow,verifier,redirectUri,root,expiresAt:Date.now()+10*60_000});
-  const scopes=flow==='youtube'?['openid','email','profile',YOUTUBE_SCOPE]:['openid','email','profile'];
+  const scopes=flow==='youtube'?['openid','email','profile',YOUTUBE_SCOPE]:flow==='youtube-analytics'?['openid','email','profile',YOUTUBE_ANALYTICS_SCOPE]:['openid','email','profile'];
   const q=new URLSearchParams({client_id:clientId(env,store),redirect_uri:redirectUri,response_type:'code',scope:scopes.join(' '),state,code_challenge:challenge(verifier),code_challenge_method:'S256',include_granted_scopes:'true'});
-  if(flow==='youtube'){q.set('access_type','offline');q.set('prompt','consent');}
+  if(flow==='youtube'||flow==='youtube-analytics'){q.set('access_type','offline');q.set('prompt','consent');}
   return `${AUTH_URL}?${q}`;
 }
 export async function finishGoogleOAuth({code,state,root=null,env=process.env}){

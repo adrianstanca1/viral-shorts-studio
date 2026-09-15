@@ -23,3 +23,9 @@ Observed scene render time was 3.75 s/scene at P50 and 4.70 s/scene at P75. Cont
 - Provider execution requires current verified-free evidence and a successful fresh provider smoke test.
 - Provider smoke tests refuse to run unless authentication and verified-free allowance are already proven.
 - Human approval remains required before publishing.
+
+## YouTube Analytics connector
+- Read-only YouTube Analytics OAuth flow is implemented separately from publishing.
+- Runtime ingestion remains disabled by default until the owner explicitly grants `yt-analytics.readonly` and enables `YOUTUBE_ANALYTICS_ENABLED`.
+- The connector cannot publish, modify, or delete channel content.
+- The default report covers the prior 28 completed calendar days and returns views, watch minutes, average view duration, subscribers gained and subscribers lost.

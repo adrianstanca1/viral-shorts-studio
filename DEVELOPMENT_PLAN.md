@@ -35,7 +35,7 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 - [x] Add production analytics from projects, QA and publishing outcomes.
 - [x] Feed successful patterns into Brand Brain without overwriting user-defined identity.
 - [x] Add title/thumbnail experiment tracking.
-- [ ] Add YouTube analytics only after scopes and connector are explicitly configured.
+- [x] Add optional YouTube Analytics connector with explicit read-only OAuth scope and disabled-by-default runtime gate.
 
 ## Phase 6 — Performance and Launch Hardening
 - [x] Benchmark short, 5 min and 20 min projects without blocking live work.
