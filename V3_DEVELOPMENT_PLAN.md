@@ -13,8 +13,8 @@
 
 ## V3.3 Voice + Thumbnail Studio
 - [x] Voice catalogue with local-first voices, preview metadata and favourites.
-- [ ] Thumbnail variants linked directly to experiments.
-- [ ] Owner-reviewed winner promotion.
+- [x] Thumbnail variants linked directly to experiments.
+- [x] Owner-reviewed winner promotion.
 
 ## V3.4 30-minute Production
 - [x] Extend long-form limit from 20 to 30 minutes with chapter checkpointing.
