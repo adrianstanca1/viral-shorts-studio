@@ -108,7 +108,7 @@ app.get('/api/dashboard',async(req,res)=>{try{const all=list(),providerSnapshot=
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
   stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','verified-free-ai-candidates','free-allowance-planning','provider-job-harvesting','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa','approval','distribution-package','publish-queue'],
-  formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes'],
+  formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes','2–20 min long-form / adaptive scenes'],
   styles,
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],
   optionalProviders:['Pexels','Pixabay','OpenRouter','Tavily','fal.ai','future image-to-video adapters'],
@@ -163,10 +163,11 @@ app.post('/api/projects',(req,res)=>{
   const topic=String(body.topic||'').trim();
   if(topic.length<3 || topic.length>300) return res.status(400).json({error:'topic is required'});
   if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)return res.status(429).json({error:'Queue full; retry after a project finishes'});
-  if(body.duration!==undefined && (![30,60,90].includes(Number(body.duration))))return res.status(400).json({error:'Choose 30 seconds, 1 minute, or 1 minute 30 seconds'});
+  const duration=Number(body.duration||60);
+  if(!Number.isFinite(duration)||duration<30||duration>1200)return res.status(400).json({error:'Choose a duration from 30 seconds to 20 minutes'});
   const niche=niches.includes(body.niche)?body.niche:'storytelling';
   const style=styles.includes(body.style)?body.style:'documentary';
-  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,topic,duration:Number(body.duration||60),autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
+  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,topic,duration,autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
   save(job); res.status(202).json(job);
   setImmediate(kick);
 });

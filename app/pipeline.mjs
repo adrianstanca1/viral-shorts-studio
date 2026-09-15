@@ -155,8 +155,14 @@ export async function researchTopic(topic){
   return rankSources(topic,sources).slice(0,8);
 }
 
+export function sceneCountForDuration(duration=60){
+  const seconds=Math.max(15,Number(duration||60));
+  if(seconds<=30)return 8; if(seconds<=60)return 14; if(seconds<=90)return 20;
+  return Math.max(20,Math.min(180,Math.ceil(seconds/7.5)));
+}
+
 export function buildStoryboard({topic,niche,duration,sources,style='documentary'}){
-  const targetScenes=Number(duration||60)<=30?8:Number(duration||60)<=60?14:20;
+  const targetScenes=sceneCountForDuration(duration);
   const rankedFacts=rankFacts(topic,sources);
   const narrativeFacts=selectNarrativeFacts(topic,sources,Math.max(targetScenes+2,8));
   const hookByNiche={
