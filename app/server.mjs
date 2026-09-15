@@ -38,6 +38,8 @@ import { buildRepurposePack } from './repurpose.mjs';
 import { scoreContentOpportunities } from './content-opportunities.mjs';
 import { clipPlan, ensureAspectVariant, ensureClip } from './repurpose-media.mjs';
 import { recordProviderSmoke, providerSmokeSummary } from './provider-smoke.mjs';
+import { listApiKeys, createApiKey, revokeApiKey, verifyApiKey } from './api-keys.mjs';
+import { mcpToolDefinitions, mcpError, mcpResult, mcpText } from './mcp-protocol.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -58,6 +60,13 @@ app.get('/api/oauth/google/callback',async(req,res)=>{if(req.query.error||!req.q
 app.get('/recover-owner',(req,res)=>{res.setHeader('Cache-Control','no-store');const st=ownerRecoveryStatus(DATA,recoveryCookie(req));return res.type('html').send(recoveryPage({state:st.state,code:st.item?.code||''}))});
 app.post('/recover-owner/request',createRateLimiter({windowMs:15*60_000,max:5}),(req,res)=>{res.setHeader('Cache-Control','no-store');const item=createOwnerRecovery(DATA);setRecoveryCookie(req,res,item.id);return res.type('html').send(recoveryPage({state:'pending',code:item.code}))});
 app.post('/recover-owner/complete',createRateLimiter({windowMs:15*60_000,max:5}),(req,res)=>{res.setHeader('Cache-Control','no-store');const id=recoveryCookie(req),st=ownerRecoveryStatus(DATA,id);if(st.state!=='approved')return res.status(403).type('html').send(recoveryPage({state:st.state,code:st.item?.code||''}));if(String(req.body?.password||'')!==String(req.body?.confirm||''))return res.status(400).type('html').send(recoveryPage({state:'approved',error:'Passwords do not match'}));try{completeOwnerRecovery(DATA,id,req.body?.password);clearRecoveryCookie(res);return res.type('html').send(recoveryPage({state:'done'}))}catch(e){return res.status(400).type('html').send(recoveryPage({state:'approved',error:String(e.message||e).slice(0,180)}))}});
+app.post('/mcp',async(req,res)=>{
+  const id=req.body?.id??null,method=String(req.body?.method||''),raw=String(req.get('x-creator-key')||req.get('authorization')||'').replace(/^Bearer\s+/i,'').trim();
+  if(method==='tools/list'){if(!verifyApiKey(DATA,raw,'read'))return res.status(401).json(mcpError(id,-32001,'authentication required'));return res.json(mcpResult(id,{tools:mcpToolDefinitions}));}
+  if(method!=='tools/call')return res.status(400).json(mcpError(id,-32601,'method not found'));
+  const name=String(req.body?.params?.name||''),args=req.body?.params?.arguments||{},scope=name==='list_projects'?'read':'create';if(!verifyApiKey(DATA,raw,scope))return res.status(401).json(mcpError(id,-32001,'authentication required'));
+  try{let out;if(name==='list_projects')out=list().slice(0,Math.max(1,Math.min(100,Number(args.limit||20)))).map(projectSummary);else if(name==='research')out=await runResearch(DATA,args);else if(name==='create_product')out=createProduct(DATA,{...args,brand:readBrandBrain(DATA)});else if(name==='create_website')out=createSite(DATA,{...args,brand:readBrandBrain(DATA)});else if(name==='plan_creator_goal')out=planCreatorGoal(args);else if(name==='create_video')out=queueVideoProject(args);else return res.status(404).json(mcpError(id,-32602,'unknown tool'));return res.json(mcpResult(id,mcpText(out)));}catch(e){return res.status(400).json(mcpError(id,-32000,String(e.message||e).slice(0,240)));}
+});
 app.use((req,res,next)=>{if(req.path==='/api/health'||req.path==='/login'||req.path==='/api/session'||req.path==='/recover-owner'||req.path==='/recover-owner/request'||req.path==='/recover-owner/complete')return next();if(WORKER_TOKEN&&safeEqual(req.get('x-provider-worker-token'),WORKER_TOKEN))return next();if(isOwner(req,AUTH_SECRET))return next();if(req.path.startsWith('/api/'))return res.status(401).json({error:'authentication required'});return res.redirect('/login');});
 app.use(createRateLimiter({windowMs:5*60_000,max:Number(process.env.WRITE_RATE_LIMIT||120)}));
 app.get('/setup/google',(req,res)=>{res.setHeader('Cache-Control','no-store');return res.type('html').send(googleSetupPage())});
@@ -107,6 +116,9 @@ async function maybeAutoCloudPlan(id){
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
 app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA),workerProviders:providerWorkerInventory(DATA),freeProviderRouting:freeProviderSummary(DATA)}));
+app.get('/api/integration-keys',(req,res)=>res.json({keys:listApiKeys(DATA),policy:{storedAsHashes:true,scopes:['read','create'],mcp:'/mcp'}}));
+app.post('/api/integration-keys',(req,res)=>{try{res.status(201).json(createApiKey(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.delete('/api/integration-keys/:id',(req,res)=>{try{res.json(revokeApiKey(DATA,req.params.id))}catch(e){res.status(404).json({error:String(e.message||e)})}});
 app.get('/api/model-recommendations',(req,res)=>res.json(modelRecommendationPolicy()));
 function statsSnapshot(all=list()){
   const completed=all.filter(x=>x.status==='complete'),failed=all.filter(x=>x.status==='failed');
@@ -248,7 +260,21 @@ app.post('/api/projects/:id/scenes/:index/ai-candidates',(req,res)=>{
   try{const item=registerAiCandidate(DATA,j.id,Number(req.params.index),req.body||{});res.status(201).json(item);}catch(e){res.status(400).json({error:String(e.message||e)});}
 });
 
+function queueVideoProject(body={}){
+  if(shuttingDown)throw Error('Studio is restarting; retry shortly');
+  const topic=String(body.topic||'').trim();
+  if(topic.length<3||topic.length>300)throw Error('topic is required');
+  if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)throw Error('Queue full; retry after a project finishes');
+  const duration=Number(body.duration||60);if(!Number.isFinite(duration)||duration<30||duration>1200)throw Error('Choose a duration from 30 seconds to 20 minutes');
+  const niche=niches.includes(body.niche)?body.niche:'storytelling',requestedMode=videoModes.includes(body.mode)?body.mode:'multi-scene',mode=body.style==='whiteboard'?'whiteboard':requestedMode,style=mode==='whiteboard'?'whiteboard':styles.includes(body.style)?body.style:'documentary',language=languages.includes(body.language)?body.language:'en',aspect=aspects.includes(body.aspect)?body.aspect:'9:16',voice=voices.includes(body.voice)?body.voice:'auto',captionStyle=captionStyles.includes(body.captionStyle)?body.captionStyle:'bold',character=body.characterId?getCharacter(DATA,String(body.characterId)):null,brand=readBrandBrain(DATA),creatorContext=brandPrompt(brand,character);
+  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,mode,language,aspect,voice,captionStyle,characterId:character?.id||null,character:character?{id:character.id,name:character.name}:null,brand:{name:brand.name,version:brand.version},creatorContext,topic,duration,autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};save(job);setImmediate(kick);return job;
+}
 app.post('/api/projects',(req,res)=>{
+  try{return res.status(202).json(queueVideoProject(req.body||{}))}catch(e){const msg=String(e.message||e);return res.status(/Queue full/.test(msg)?429:/restarting/.test(msg)?503:400).json({error:msg})}
+});
+/* legacy creation block removed */
+/*
+app.post('/api/projects-legacy',(req,res)=>{
   if(shuttingDown)return res.status(503).json({error:'Studio is restarting; retry shortly'});
   const body=req.body||{};
   const topic=String(body.topic||'').trim();
@@ -271,6 +297,7 @@ app.post('/api/projects',(req,res)=>{
   save(job); res.status(202).json(job);
   setImmediate(kick);
 });
+*/
 
 app.post('/api/projects/:id/retry',(req,res)=>{
   const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});
