@@ -265,7 +265,7 @@ function queueVideoProject(body={}){
   const topic=String(body.topic||'').trim();
   if(topic.length<3||topic.length>300)throw Error('topic is required');
   if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)throw Error('Queue full; retry after a project finishes');
-  const duration=Number(body.duration||60);if(!Number.isFinite(duration)||duration<30||duration>1200)throw Error('Choose a duration from 30 seconds to 20 minutes');
+  const duration=Number(body.duration||60);if(!Number.isFinite(duration)||duration<30||duration>1800)throw Error('Choose a duration from 30 seconds to 30 minutes');
   const niche=niches.includes(body.niche)?body.niche:'storytelling',requestedMode=videoModes.includes(body.mode)?body.mode:'multi-scene',mode=body.style==='whiteboard'?'whiteboard':requestedMode,style=mode==='whiteboard'?'whiteboard':styles.includes(body.style)?body.style:'documentary',language=languages.includes(body.language)?body.language:'en',aspect=aspects.includes(body.aspect)?body.aspect:'9:16',voice=voices.includes(body.voice)?body.voice:'auto',captionStyle=captionStyles.includes(body.captionStyle)?body.captionStyle:'bold',character=body.characterId?getCharacter(DATA,String(body.characterId)):null,brand=readBrandBrain(DATA),creatorContext=brandPrompt(brand,character);
   const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,mode,language,aspect,voice,captionStyle,characterId:character?.id||null,character:character?{id:character.id,name:character.name}:null,brand:{name:brand.name,version:brand.version},creatorContext,topic,duration,autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};save(job);setImmediate(kick);return job;
 }
@@ -281,7 +281,7 @@ app.post('/api/projects-legacy',(req,res)=>{
   if(topic.length<3 || topic.length>300) return res.status(400).json({error:'topic is required'});
   if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)return res.status(429).json({error:'Queue full; retry after a project finishes'});
   const duration=Number(body.duration||60);
-  if(!Number.isFinite(duration)||duration<30||duration>1200)return res.status(400).json({error:'Choose a duration from 30 seconds to 20 minutes'});
+  if(!Number.isFinite(duration)||duration<30||duration>1800)return res.status(400).json({error:'Choose a duration from 30 seconds to 30 minutes'});
   const niche=niches.includes(body.niche)?body.niche:'storytelling';
   const requestedMode=videoModes.includes(body.mode)?body.mode:'multi-scene';
   const mode=body.style==='whiteboard'?'whiteboard':requestedMode;

@@ -167,7 +167,7 @@ export function sceneCountForDuration(duration=60,mode='multi-scene'){
   const seconds=Math.max(15,Number(duration||60));
   if(mode==='single-scene')return 1;
   if(seconds<=30)return 8; if(seconds<=60)return 14; if(seconds<=90)return 20;
-  return Math.max(20,Math.min(180,Math.ceil(seconds/7.5)));
+  return Math.max(20,Math.min(240,Math.ceil(seconds/7.5)));
 }
 export function chapterPlanForStoryboard(storyboard=[],duration=60){
   const scenes=[...storyboard].sort((a,b)=>a.index-b.index);if(!scenes.length)return [];

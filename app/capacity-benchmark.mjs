@@ -2,7 +2,7 @@ import fs from 'node:fs';import path from 'node:path';import os from 'node:os';i
 const avg=xs=>xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:0;
 const pct=(xs,p)=>{if(!xs.length)return 0;const a=[...xs].sort((x,y)=>x-y),i=Math.min(a.length-1,Math.max(0,Math.ceil(p*a.length)-1));return a[i]};
 function cgroupLimits(){let cpuLimit=null,memoryLimitMB=null;try{const [q,p]=fs.readFileSync('/sys/fs/cgroup/cpu.max','utf8').trim().split(/\s+/);if(q!=='max')cpuLimit=Number((Number(q)/Number(p)).toFixed(2));}catch{}try{const raw=fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim();if(raw!=='max')memoryLimitMB=Math.round(Number(raw)/1048576);}catch{}return {cpuLimit,memoryLimitMB}}
-export function buildCapacityBenchmark(projects=[],targets=[30,300,1200]){
+export function buildCapacityBenchmark(projects=[],targets=[30,300,1200,1800]){
   const completed=projects.filter(p=>p.status==='complete'&&Number(p.metrics?.totalSeconds)>5&&Number(p.metrics?.sceneRenderSeconds)>1&&Number(p.qa?.sceneCount||p.scenes?.length)>0);
   const sceneRates=completed.map(p=>Number(p.metrics.sceneRenderSeconds)/Math.max(1,Number(p.qa?.sceneCount||p.scenes?.length))).filter(x=>x>0),fixedCosts=completed.map(p=>Math.max(0,Number(p.metrics.totalSeconds)-Number(p.metrics.sceneRenderSeconds))).filter(Number.isFinite);
   const sceneP50=pct(sceneRates,.5),sceneP75=pct(sceneRates,.75),fixedP50=pct(fixedCosts,.5),fixedP75=pct(fixedCosts,.75);

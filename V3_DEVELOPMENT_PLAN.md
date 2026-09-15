@@ -17,9 +17,9 @@
 - [ ] Owner-reviewed winner promotion.
 
 ## V3.4 30-minute Production
-- [ ] Extend long-form limit from 20 to 30 minutes with chapter checkpointing.
-- [ ] Validate memory/concurrency and non-blocking capacity estimate.
-- [ ] Add long-form recovery smoke tests.
+- [x] Extend long-form limit from 20 to 30 minutes with chapter checkpointing.
+- [x] Validate memory/concurrency and non-blocking capacity estimate.
+- [x] Add long-form recovery smoke tests.
 
 ## V3.5 Competitive Evidence
 - [ ] Maintain feature parity scorecard against Digital Maker.AI.
