@@ -21,9 +21,9 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 ## Phase 3 — Real Asset Generation
 - [x] Make Image Maker provider jobs first-class assets rather than pseudo-projects.
 - [x] Persist provider result files/URLs into creator-assets records.
-- [ ] Add verified-free image and video provider capability registry.
+- [x] Add verified-free image and video provider capability registry.
 - [x] Add local/verified-free model recommendations discovered through Hugging Face.
-- [ ] Add safe provider smoke tests before enabling a route.
+- [x] Add safe provider smoke tests before enabling a route.
 
 ## Phase 4 — Product and Website Exports
 - [x] Generate downloadable HTML/CSS website bundles and previews.

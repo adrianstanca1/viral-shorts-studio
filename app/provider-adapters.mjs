@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { providerEvidence, evidenceFresh } from './provider-verifier.mjs';
+import { getProviderSmoke, smokeFresh } from './provider-smoke.mjs';
 
 const truthy=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 const safeName=s=>String(s||'asset').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120);
+export const providerCapabilities=()=>({huggingface:{kinds:['image'],adapter:'direct-http',requiresSmoke:true},nvidia:{kinds:['image'],adapter:'direct-http',requiresSmoke:true},higgsfield:{kinds:['video'],adapter:'connector-only',requiresSmoke:false},fal:{kinds:['image','video'],adapter:'not-implemented',requiresSmoke:true},external:{kinds:['image','video'],adapter:'manual',requiresSmoke:false}});
 
 function providerConfig(id){
   const auto=truthy(process.env.AUTO_ENABLE_VERIFIED_FREE);
@@ -15,10 +17,10 @@ function providerConfig(id){
 export function providerWorkerInventory(root=process.env.DATA_DIR||'/app/data'){
   return ['huggingface','nvidia','higgsfield','fal','external'].map(id=>{
     const c=providerConfig(id),e=providerEvidence(root,id);
-    const connectorOnly=id==='higgsfield';
+    const connectorOnly=id==='higgsfield',capability=providerCapabilities()[id]||{kinds:[],adapter:'unknown',requiresSmoke:true},smoke=getProviderSmoke(root,id);
     const verifiedFree=!!(e?.zeroCostVerified&&evidenceFresh(e)&&Number(e?.remaining||0)>0);
-    const enabled=!!c.enabled;
-    return {id,enabled,verifiedFree,authenticated:e?.authenticated??null,remaining:Number(e?.remaining||0),executable:!!(enabled&&verifiedFree&&c.token&&(id!=='nvidia'||c.endpoint)),connectorOnly,verificationSource:e?.source||null};
+    const enabled=!!c.enabled,preflightReady=!!(enabled&&verifiedFree&&c.token&&(id!=='nvidia'||c.endpoint));
+    return {id,enabled,verifiedFree,authenticated:e?.authenticated??null,remaining:Number(e?.remaining||0),preflightReady,smokePassed:smokeFresh(smoke),executable:!!(preflightReady&&(!capability.requiresSmoke||smokeFresh(smoke))),connectorOnly,verificationSource:e?.source||null,capability,smoke:smoke?{success:smoke.success,checkedAt:smoke.checkedAt,fresh:smokeFresh(smoke)}:null};
   });
 }
 async function saveResponse(r,dest){

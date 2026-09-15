@@ -10,10 +10,10 @@ import { generativeStatus } from './generative-router.mjs';
 import { buildAiGenerationPlan, summarizeAiPlan } from './ai-generation-manager.mjs';
 import { registerAiCandidate, registerLocalAiCandidate, listAiCandidates, aiCandidateStatus, deleteAiCandidatesForProject } from './ai-candidate-router.mjs';
 import { createProviderJob, getProviderJob, resolveProviderJob, failProviderJob, providerJobStatus, listProviderJobs, providerJobsSnapshot, claimProviderJobs, releaseProviderJob, reconcileProviderJobs, maintainProviderJobs, deleteProviderJobsForProject } from './provider-job-router.mjs';
-import { providerWorkerInventory } from './provider-adapters.mjs';
+import { providerWorkerInventory, providerCapabilities, executeProviderJob } from './provider-adapters.mjs';
 import { refreshOpenRouterFreeCatalog, readOpenRouterFreeCatalog } from './openrouter-catalog.mjs';
 import { chooseFreeProvider, freeProviderSummary, canQueueFreeProvider } from './provider-selector.mjs';
-import { readVerification, verifyProviders, recordFreeEvidence } from './provider-verifier.mjs';
+import { readVerification, verifyProviders, recordFreeEvidence, consumeFreeAllowance } from './provider-verifier.mjs';
 import { authConfigured, assertLaunchSecurity, isOwner, securityHeaders, createRateLimiter, loginPage, setOwnerCookie, clearOwnerCookie, safeEqual } from './security.mjs';
 import { recoverProjectState, prepareProjectRetry, inferFailureStage, failureIsRecent, classifyRecoverability } from './recovery.mjs';
 import { ensurePublishApproval, decidePublishApproval, invalidatePublishApproval } from './publish-approval.mjs';
@@ -33,6 +33,7 @@ import { listRuns, getRun, findRunByIdempotency, createRun, updateRun, syncRunWi
 import { buildCreatorAnalytics, recordAnalyticsSnapshot, readAnalytics, listExperiments, createExperiment, updateExperiment } from './creator-analytics.mjs';
 import { modelRecommendationPolicy } from './model-recommendations.mjs';
 import { buildCapacityBenchmark, saveCapacityBenchmark } from './capacity-benchmark.mjs';
+import { recordProviderSmoke, providerSmokeSummary } from './provider-smoke.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -198,6 +199,8 @@ app.post('/api/creator-agent/runs/:id/retry',async(req,res)=>{
 app.get('/api/openrouter/free-models',(req,res)=>res.json(readOpenRouterFreeCatalog()));
 app.get('/api/provider-worker/status',(req,res)=>{const f=path.join(DATA,'provider-worker-status.json');if(!fs.existsSync(f))return res.json({state:'offline'});try{res.json(JSON.parse(fs.readFileSync(f,'utf8')))}catch{res.json({state:'invalid'})}});
 app.get('/api/provider-verification',(req,res)=>res.json({state:readVerification(DATA),worker:providerWorkerInventory(DATA)}));
+app.get('/api/provider-capabilities',(req,res)=>res.json({capabilities:providerCapabilities(),inventory:providerWorkerInventory(DATA),smoke:providerSmokeSummary(DATA),policy:{freeOnly:true,smokeRequiredBeforeExecution:true}}));
+app.post('/api/providers/:id/smoke',async(req,res)=>{const id=String(req.params.id||'').toLowerCase(),row=providerWorkerInventory(DATA).find(x=>x.id===id);if(!row)return res.status(404).json({error:'provider not found'});if(!row.preflightReady)return res.status(409).json({error:'provider is not authenticated with fresh verified-free allowance'});const smokeJob={id:`smoke-${id}-${Date.now()}`,provider:id,kind:'image',prompt:'simple blue geometric shape on a plain white background',verifiedFree:true};try{const result=await executeProviderJob(smokeJob,path.join(DATA,'provider-assets','smoke',id));const stat=fs.statSync(result.file);if(!stat.isFile()||stat.size<256)throw Error('provider smoke output is empty');const smoke=recordProviderSmoke(DATA,id,{success:true,model:result.model,kind:result.kind,detail:`${stat.size} bytes`});consumeFreeAllowance(DATA,id,1);res.json({provider:id,success:true,smoke,remaining:readVerification(DATA).providers?.[id]?.remaining??0})}catch(e){const smoke=recordProviderSmoke(DATA,id,{success:false,detail:String(e.message||e).slice(0,300)});res.status(502).json({provider:id,success:false,smoke,error:String(e.message||e)})}});
 app.post('/api/provider-verification/check',async(req,res)=>{try{res.json(await verifyProviders(DATA))}catch(e){res.status(500).json({error:String(e.message||e)})}});
 app.post('/api/provider-verification/evidence',(req,res)=>{try{if(!process.env.PROVIDER_WORKER_TOKEN||req.get('x-provider-worker-token')!==process.env.PROVIDER_WORKER_TOKEN)return res.status(403).json({error:'forbidden'});res.json(recordFreeEvidence(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/provider-jobs',(req,res)=>{const status=String(req.query.status||'').trim(),provider=String(req.query.provider||'').trim().toLowerCase(),projectId=String(req.query.projectId||'').trim();res.json({...providerJobStatus(DATA),jobs:listProviderJobs(DATA,{status,provider,projectId}).slice(0,100)});});
