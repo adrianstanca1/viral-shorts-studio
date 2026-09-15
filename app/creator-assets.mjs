@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+
+const kinds=['logo','product-mockup','youtube-thumbnail','youtube-banner','channel-kit','instagram-post','facebook-ad','faceless-character','ebook-cover'];
+const ratios={logo:'1:1','product-mockup':'1:1','youtube-thumbnail':'16:9','youtube-banner':'16:9','channel-kit':'16:9','instagram-post':'1:1','facebook-ad':'1:1','faceless-character':'1:1','ebook-cover':'2:3'};
+function file(root){return path.join(root,'creator-assets.json')}
+function read(root){try{return JSON.parse(fs.readFileSync(file(root),'utf8'))}catch{return {assets:[],characters:[]}}}
+function write(root,v){fs.mkdirSync(root,{recursive:true});const f=file(root),tmp=f+'.tmp';fs.writeFileSync(tmp,JSON.stringify(v,null,2),{mode:0o600});fs.renameSync(tmp,f)}
+export function imageKinds(){return [...kinds]}
+export function listCreatorAssets(root){const x=read(root);return {assets:x.assets||[],characters:x.characters||[]}}
+export function createImageBrief(root,input={}){const kind=kinds.includes(input.kind)?input.kind:'youtube-thumbnail',title=String(input.title||input.prompt||'Untitled creation').trim().slice(0,180),style=String(input.style||'cinematic').slice(0,60),aspect=String(input.aspect||ratios[kind]||'1:1').slice(0,12),prompt=String(input.prompt||title).trim().slice(0,1200);if(prompt.length<3)throw new Error('prompt is required');const item={id:crypto.randomUUID(),type:'image',kind,title,style,aspect,prompt,status:'brief-ready',createdAt:new Date().toISOString(),generation:{policy:'free-only',preferred:'verified-free image provider',fallback:'export prompt'}};const x=read(root);x.assets=[item,...(x.assets||[])].slice(0,500);write(root,x);return item}
+export function createCharacter(root,input={}){const name=String(input.name||'').trim().slice(0,80);if(name.length<2)throw new Error('character name is required');const item={id:crypto.randomUUID(),name,description:String(input.description||'').trim().slice(0,1000),visualStyle:String(input.visualStyle||'cinematic').slice(0,80),voice:String(input.voice||'auto').slice(0,80),negativePrompt:String(input.negativePrompt||'').trim().slice(0,600),createdAt:new Date().toISOString(),version:1};const x=read(root);x.characters=[item,...(x.characters||[])].slice(0,200);write(root,x);return item}
+export function getCharacter(root,id){return (read(root).characters||[]).find(x=>x.id===id)||null}
