@@ -175,6 +175,9 @@ export function chapterPlanForStoryboard(storyboard=[],duration=60){
   const target=Math.max(1,Math.round(scenes.length/Math.max(1,Math.ceil(Number(duration)/chapterSeconds))));
   const out=[];for(let i=0;i<scenes.length;i+=target){const chunk=scenes.slice(i,i+target);out.push({id:out.length+1,startIndex:chunk[0].index,endIndex:chunk.at(-1).index,sceneIndexes:chunk.map(x=>x.index),status:'pending',completedScenes:0,totalScenes:chunk.length});}return out;
 }
+function cpuQuotaLimit(){try{const [quota,period]=fs.readFileSync('/sys/fs/cgroup/cpu.max','utf8').trim().split(/\s+/);if(quota!=='max'){const n=Number(quota)/Number(period);if(Number.isFinite(n)&&n>0)return n;}}catch{}return 4;}
+export function sceneConcurrencyForDuration(duration=60,{configured=Number(process.env.SCENE_CONCURRENCY||0),cpuLimit=cpuQuotaLimit()}={}){const adaptive=Number(duration)<=30?3:Number(duration)>=600?1:2,cpuCap=Math.max(1,Math.floor(Number(cpuLimit||1)/2));return Math.max(1,Math.min(configured>0?configured:adaptive,3,cpuCap));}
+
 
 
 export function buildStoryboard({topic,niche,duration,sources,style='documentary',mode='multi-scene',language='en',aspect='9:16',voice='auto',captionStyle='bold'}){
@@ -560,8 +563,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       }
       return pack.selected;
     };
-    let cursor=0; const configuredConcurrency=Number(process.env.SCENE_CONCURRENCY||0),adaptiveConcurrency=Number(project.duration)<=30?3:Number(project.duration)>=600?1:2;
-    const workerCount=Math.min(configuredConcurrency>0?configuredConcurrency:adaptiveConcurrency,storyboard.length,3);
+    let cursor=0; const workerCount=Math.min(sceneConcurrencyForDuration(project.duration),storyboard.length);
     metrics.sceneConcurrency=workerCount;
     const worker=async()=>{while(true){const i=cursor++;if(i>=storyboard.length)return;results[i]=await renderOne(storyboard[i]);completed++;const doneIndexes=new Set(results.filter(Boolean).map(x=>x.index));const checkpoints=chapterCheckpoints.map(c=>{const completedScenes=c.sceneIndexes.filter(x=>doneIndexes.has(x)).length,status=completedScenes===c.totalScenes?'complete':completedScenes>0?'running':c.status==='complete'?'complete':'pending';return {...c,completedScenes,status,...(status==='complete'&&!c.completedAt?{completedAt:new Date().toISOString()}: {})}});chapterCheckpoints.splice(0,chapterCheckpoints.length,...checkpoints);update({scenes:results.filter(Boolean).sort((a,b)=>a.index-b.index),chapterCheckpoints:checkpoints,progress:25+Math.round(60*completed/storyboard.length),metrics});}};
     await Promise.all(Array.from({length:workerCount},worker));
