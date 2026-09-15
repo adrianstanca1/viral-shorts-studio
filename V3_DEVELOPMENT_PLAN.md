@@ -12,7 +12,7 @@
 - [x] Saved searches and repeatable opportunity scorecards.
 
 ## V3.3 Voice + Thumbnail Studio
-- [ ] Voice catalogue with local-first voices, preview metadata and favourites.
+- [x] Voice catalogue with local-first voices, preview metadata and favourites.
 - [ ] Thumbnail variants linked directly to experiments.
 - [ ] Owner-reviewed winner promotion.
 
