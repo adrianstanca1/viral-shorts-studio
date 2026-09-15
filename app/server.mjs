@@ -49,6 +49,8 @@ import { listWorkspaceMembers, createWorkspaceInvite, acceptWorkspaceInvite, rev
 import { recordAudit, readAudit } from './audit-log.mjs';
 import { listPlugins, getPlugin, pluginForTool, setPluginEnabled } from './plugin-registry.mjs';
 import { buildBackupManifest, validateRecoverableState } from './backup-manifest.mjs';
+import { refreshPortfolio, getPortfolio, decidePortfolioSlot, linkPortfolioProject, portfolioAnalytics } from './content-portfolio.mjs';
+import { monetizationBrief, experimentAllocation } from './monetization-intelligence.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -169,6 +171,12 @@ app.post('/api/experiments',(req,res)=>{try{const projectId=String(req.body?.pro
 app.patch('/api/experiments/:id',(req,res)=>{try{res.json(updateExperiment(DATA,req.params.id,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/experiments/insights',(req,res)=>res.json(experimentInsights(DATA)));
 app.get('/api/analytics/opportunities',async(req,res)=>{const env=youtubeAnalyticsCredentialEnv(DATA),status=youtubeAnalyticsStatus(env);let youtube=null,error=null;if(status.enabled){try{youtube=await fetchYouTubeAnalytics({days:Number(req.query.days||28),env})}catch(e){error=String(e.message||e).slice(0,240)}}res.json({...scoreContentOpportunities(list(),youtube,experimentInsights(DATA)),youtubeAnalytics:{status,error}})});
+app.get('/api/growth/portfolio',(req,res)=>{const portfolio=getPortfolio(DATA);res.json({portfolio,analytics:portfolioAnalytics(portfolio)})});
+app.post('/api/growth/portfolio/refresh',(req,res)=>{const state=growthQueue(DATA),portfolio=refreshPortfolio(DATA,{growthItems:state.items||[],projects:list(),days:Number(req.body?.days||14),slots:Number(req.body?.slots||7)});res.json({portfolio,analytics:portfolioAnalytics(portfolio)})});
+app.post('/api/growth/portfolio/:slot/decision',(req,res)=>{try{res.json(decidePortfolioSlot(DATA,req.params.slot,String(req.body?.decision||'')))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.post('/api/growth/portfolio/:slot/create',(req,res)=>{try{const portfolio=getPortfolio(DATA),slot=portfolio?.slots?.find(x=>x.id===req.params.slot);if(!slot)return res.status(404).json({error:'portfolio slot not found'});if(slot.status!=='accepted')return res.status(409).json({error:'portfolio slot must be owner-accepted first'});const project=queueVideoProject({topic:slot.topic,duration:slot.duration,niche:req.body?.niche||'storytelling',style:req.body?.style||'documentary',aspect:req.body?.aspect||'9:16'});res.status(202).json({slot:linkPortfolioProject(DATA,slot.id,project.id),project:projectSummary(project)})}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/experiments/allocation',(req,res)=>res.json({recommendations:experimentAllocation(list(),listExperiments(DATA)),policy:{ownerReviewRequired:true,autoCreate:false}}));
+app.get('/api/monetization',(req,res)=>res.json(monetizationBrief(list(),listProducts(DATA),listSites(DATA))));
 app.get('/api/growth/queue',(req,res)=>res.json({...growthQueue(DATA),acceptedBriefs:acceptedBriefs(DATA)}));
 app.post('/api/growth/refresh',(req,res)=>{const analytics=buildCreatorAnalytics(list(),listPublishJobs(DATA,{})),scored=scoreContentOpportunities(list(),null,experimentInsights(DATA));res.json(refreshGrowthQueue(DATA,{analytics,opportunities:scored.opportunities||[],experiments:experimentInsights(DATA)}))});
 app.post('/api/growth/items/:id/decision',(req,res)=>{try{res.json(decideGrowthItem(DATA,req.params.id,String(req.body?.decision||''),req.body?.note))}catch(e){res.status(400).json({error:String(e.message||e)})}});
