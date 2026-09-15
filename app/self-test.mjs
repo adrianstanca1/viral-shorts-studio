@@ -243,4 +243,10 @@ const xp=v23mods[0].guardedExecutionPreview([{id:'b2',type:'creative-focus',stat
 const changedPreview=v23mods[0].guardedExecutionPreview([{id:'b2',type:'creative-focus',status:'ready',priority:70}],{activeJobs:1,limit:2,maxActive:5});assert.notEqual(changedPreview.previewToken,xp.previewToken);
 const rec=v23mods[1].reconcileExecutions([{id:'e1',backlogId:'b1',status:'completed',output:{type:'project',id:'p1'}},{id:'e2',backlogId:'b2',status:'completed',output:{type:'campaign',id:'c-missing'}}],{loadProject:id=>id==='p1'?{id}:null,getCampaign:()=>null});assert.equal(rec.checked,2);assert.equal(rec.findings.length,1);assert.equal(rec.policy.autoRepair,false);
 
+const v24mods=await import('./execution-preflight.mjs');
+const nowV24=Date.parse('2026-09-15T12:00:00Z');
+const preV24=v24mods.executionPreflight([{id:'ok',type:'creative-focus'},{id:'bad',type:'unknown'},{id:'cool',type:'creative-focus'}],{entries:[{backlogId:'cool',status:'failed',createdAt:'2026-09-15T11:55:00Z'}],now:nowV24,failureCooldownMinutes:10,validate:item=>{if(item.type==='unknown')throw Error('unsupported action')}});
+assert.equal(preV24.summary.eligible,1);assert.equal(preV24.summary.blocked,2);assert.equal(preV24.blocked.find(x=>x.id==='cool').reason,'recent-failure-cooldown');assert.equal(preV24.policy.autoPublish,false);
+const relV24=v24mods.executionReliability([{status:'completed'},{status:'completed'},{status:'failed'}]);assert.equal(relV24.successRate,66.7);assert.equal(relV24.policy.observedReceiptsOnly,true);
+
 console.log('self-test: ok');
