@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 const read=f=>fs.readFileSync(f,'utf8');
-const server=read('app/server.mjs'),pipeline=read('app/pipeline.mjs'),docker=read('Dockerfile'),plan=read('V3_DEVELOPMENT_PLAN.md'),v4=read('V4_DEVELOPMENT_PLAN.md'),v5=read('V5_DEVELOPMENT_PLAN.md'),v6=read('V6_DEVELOPMENT_PLAN.md'),v7=read('V7_DEVELOPMENT_PLAN.md'),v8=read('V8_DEVELOPMENT_PLAN.md'),v9=read('V9_DEVELOPMENT_PLAN.md'),v10=read('V10_DEVELOPMENT_PLAN.md'),v11=read('V11_DEVELOPMENT_PLAN.md'),v12=read('V12_DEVELOPMENT_PLAN.md'),performance=read('app/platform-performance.mjs'),series=read('app/content-series.mjs'),thumbnail=read('app/thumbnail-lab.mjs'),performanceAgent=read('app/performance-agent.mjs'),socialAnalytics=read('app/social-analytics.mjs'),experimentEvidence=read('app/experiment-evidence.mjs'),growthForecast=read('app/growth-forecast.mjs'),crossPlatform=read('app/cross-platform-learning.mjs'),backup=read('app/backup-bundle.mjs'),score=read('COMPETITIVE_SCORECARD.md');
+const server=read('app/server.mjs'),pipeline=read('app/pipeline.mjs'),docker=read('Dockerfile'),plan=read('V3_DEVELOPMENT_PLAN.md'),v4=read('V4_DEVELOPMENT_PLAN.md'),v5=read('V5_DEVELOPMENT_PLAN.md'),v6=read('V6_DEVELOPMENT_PLAN.md'),v7=read('V7_DEVELOPMENT_PLAN.md'),v8=read('V8_DEVELOPMENT_PLAN.md'),v9=read('V9_DEVELOPMENT_PLAN.md'),v10=read('V10_DEVELOPMENT_PLAN.md'),v11=read('V11_DEVELOPMENT_PLAN.md'),v12=read('V12_DEVELOPMENT_PLAN.md'),v13=read('V13_DEVELOPMENT_PLAN.md'),performance=read('app/platform-performance.mjs'),series=read('app/content-series.mjs'),thumbnail=read('app/thumbnail-lab.mjs'),performanceAgent=read('app/performance-agent.mjs'),socialAnalytics=read('app/social-analytics.mjs'),experimentEvidence=read('app/experiment-evidence.mjs'),growthForecast=read('app/growth-forecast.mjs'),crossPlatform=read('app/cross-platform-learning.mjs'),orchestrator=read('app/agent-orchestrator.mjs'),handoffs=read('app/agent-handoffs.mjs'),creativeIntel=read('app/creative-intelligence.mjs'),backup=read('app/backup-bundle.mjs'),score=read('COMPETITIVE_SCORECARD.md');
 const checks=[
   ['scoped MCP integration',server.includes("app.post('/mcp'")],
   ['30-minute production',server.includes('duration>1800')&&pipeline.includes('Math.min(240')],
@@ -47,6 +47,10 @@ const checks=[
   ['observed experiment evidence ingestion',server.includes("/api/experiments/:id/observations")&&experimentEvidence.includes('readyToClose')],
   ['cross-platform learning',server.includes("/api/performance/learning")&&crossPlatform.includes('observedMetricsOnly')],
   ['directional growth forecast',growthForecast.includes('guarantee:false')&&server.includes('channelGrowthForecast')],
-  ['V12 tracked work complete',!/^\s*- \[ \]/m.test(v12)]
+  ['V12 tracked work complete',!/^\s*- \[ \]/m.test(v12)],
+  ['coordinated multi-agent planning',server.includes("/api/creator-agent/team-plan")&&orchestrator.includes('Research Agent')&&handoffs.includes('ensureAgentHandoffs')],
+  ['observed creative intelligence',server.includes("/api/creative-intelligence")&&creativeIntel.includes('observedMetricsOnly')],
+  ['attributed experiment automation',server.includes("/api/experiments/collect-attributed")&&performance.includes('attribution:')],
+  ['V13 tracked work complete',!/^\s*- \[ \]/m.test(v13)]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);

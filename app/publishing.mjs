@@ -18,13 +18,14 @@ export function buildDistributionPackage(project,platform='youtube-shorts'){
   const description=clean(base.description||`Source-backed short about ${topic}.`).slice(0,platform==='youtube-shorts'?4800:1800);
   return {platform,title,caption:`${description}\n\n${unique.join(' ')}`.trim(),description,hashtags:unique,visibility:'private',video:`/api/projects/${project.id}/video`,thumbnail:`/api/projects/${project.id}/thumbnail`,credits:`/api/projects/${project.id}/credits`,approval:project.publishApproval||null,qa:{launchReady:project.qa?.launchReady===true,viralityScore:project.qa?.viralityScore??null}};
 }
-export function createPublishJob(root,project,{platform='youtube-shorts',scheduledAt=null}={}){
+const inputExperiment=input=>{const id=String(input?.experimentId||'').trim(),variant=Number(input?.experimentVariant);return id&&Number.isInteger(variant)&&variant>=0?{id,variant}:null};
+export function createPublishJob(root,project,{platform='youtube-shorts',scheduledAt=null,experimentId='',experimentVariant=null}={}){
   if(project?.status!=='complete'||project?.qa?.launchReady!==true)throw new Error('project is not launch-ready');
   if(project?.publishApproval?.status!=='approved')throw new Error('project is not approved for publishing');
   if(!platforms.has(platform))throw new Error('unsupported publishing platform');
   const when=scheduledAt?Date.parse(scheduledAt):NaN;if(scheduledAt&&!Number.isFinite(when))throw new Error('invalid scheduledAt');
   const state=read(root),now=new Date().toISOString();
-  const job={id:crypto.randomUUID(),projectId:project.id,platform,status:Number.isFinite(when)&&when>Date.now()?'scheduled':'ready',scheduledAt:Number.isFinite(when)?new Date(when).toISOString():null,createdAt:now,package:buildDistributionPackage(project,platform),delivery:{mode:'manual-export',externalPostingEnabled:false}};
+  const experiment=inputExperiment({experimentId,experimentVariant});const job={id:crypto.randomUUID(),projectId:project.id,platform,status:Number.isFinite(when)&&when>Date.now()?'scheduled':'ready',scheduledAt:Number.isFinite(when)?new Date(when).toISOString():null,createdAt:now,package:buildDistributionPackage(project,platform),experiment,delivery:{mode:'manual-export',externalPostingEnabled:false}};
   state.jobs=[job,...state.jobs].slice(0,500);write(root,state);return job;
 }
 
