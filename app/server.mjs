@@ -100,7 +100,7 @@ const styles = ['documentary','cinematic','hybrid','whiteboard','animated','moti
 const videoModes=['multi-scene','single-scene','whiteboard'];
 const languages=['en','fr','es','it','de'];
 const aspects=['9:16','16:9','1:1'];
-const voices=['auto','narrator'];
+const voices=['auto','narrator','slt','awb','rms','kal','kal16'];
 const captionStyles=['bold','documentary','minimal'];
 const jobs = new Map();
 const enabledFlag=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());

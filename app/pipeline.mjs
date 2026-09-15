@@ -275,7 +275,7 @@ async function makeNarration(text,outWav,targetDuration,{language='en',voice='au
   if(model){
     try{await run(piper,['--model',model,'--output_file',raw],{input:safe});engine='piper';}catch{}
   }
-  if(engine==='flite')await run('ffmpeg',['-y','-f','lavfi','-i',`flite=text='${safe}':voice=${voice==='auto'?(fliteVoices[language]||'slt'):voice}`,'-ar','44100','-ac','1',raw]);
+  if(engine==='flite'){const localVoice=['slt','awb','rms','kal','kal16'].includes(voice)?voice:(fliteVoices[language]||'slt');await run('ffmpeg',['-y','-f','lavfi','-i',`flite=text='${safe}':voice=${localVoice}`,'-ar','44100','-ac','1',raw]);}
   const measured=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',raw]))||targetDuration;
   const target=clamp(Number(targetDuration)||measured,3,12);
   let ratio=measured/target;
