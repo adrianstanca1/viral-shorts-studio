@@ -12,7 +12,7 @@
 
 ## V4.3 Collaboration
 - [x] Workspace member model with owner/editor/reviewer roles.
-- [x] Scoped invitations and revocation without weakening owner authentication.
+- [x] Scoped invitations, browser join sessions and revocation without weakening owner authentication.
 - [x] Audit log for content, approval and publishing mutations.
 
 ## V4.4 Plugin Marketplace
