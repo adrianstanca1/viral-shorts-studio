@@ -9,8 +9,8 @@
 
 ## V8.2 External Publishing
 - [x] Add owner-configurable TikTok connector without weakening approval gates.
-- [ ] Add owner-configurable Instagram Reels connector without weakening approval gates.
-- [ ] Keep manual distribution packages as fallback when a connector is unavailable.
+- [x] Add owner-configurable Instagram Reels connector without weakening approval gates.
+- [x] Keep manual distribution packages as fallback when a connector is unavailable.
 
 ## V8.3 Release Assurance
 - [ ] Add V8 voice routing and external connector policy checks to release gate.

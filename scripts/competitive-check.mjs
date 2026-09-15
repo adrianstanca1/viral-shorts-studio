@@ -26,6 +26,7 @@ const checks=[
   ['V6 tracked work complete',!/^\s*- \[ \]/m.test(v6)],
   ['neural multilingual Piper voices',docker.includes('piper-tts==1.8.0')&&pipeline.includes('piperVoiceModels')&&server.includes("piper-ro-mihai")],
   ['TikTok connector guarded',server.includes('tiktokPublisherStatus')&&server.includes('uploadTikTokVideo')],
+  ['Instagram connector guarded',server.includes('instagramPublisherStatus')&&server.includes('uploadInstagramReel')&&server.includes('/publish-media/:token')],
   ['safe backup export and restore',server.includes("/api/backup/export")&&server.includes("/api/backup/restore")&&backup.includes('RESTORE SAFE STATE')],
   ['V7 tracked work complete',!/^\s*- \[ \]/m.test(v7)]
 ];
