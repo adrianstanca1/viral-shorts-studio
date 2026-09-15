@@ -16,5 +16,5 @@
 - [x] Remove stale legacy project-creation route code.
 
 ## V7.3 Release follow-up
-- [ ] Run release gate and production deploy on exact V7 commit.
-- [ ] Verify public auth boundaries, backup validation and GitHub Actions.
+- [x] Run release gate and production deploy on exact V7 commit.
+- [x] Verify public auth boundaries, backup validation and GitHub Actions.
