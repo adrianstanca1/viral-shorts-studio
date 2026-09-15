@@ -51,12 +51,15 @@ import { listPlugins, getPlugin, pluginForTool, setPluginEnabled } from './plugi
 import { buildBackupManifest, validateRecoverableState } from './backup-manifest.mjs';
 import { refreshPortfolio, getPortfolio, decidePortfolioSlot, linkPortfolioProject, portfolioAnalytics } from './content-portfolio.mjs';
 import { monetizationBrief, experimentAllocation } from './monetization-intelligence.mjs';
+import { listAgents, getAgent, configureAgent, agentGoal } from './agent-marketplace.mjs';
+import { observeRequest, observabilitySnapshot } from './observability.mjs';
 
 const app = express();
 app.disable('x-powered-by');
 app.use(securityHeaders);
 app.use(express.json({limit:'2mb'}));
 app.use(express.urlencoded({extended:false,limit:'16kb'}));
+app.use((req,res,next)=>{const started=performance.now();res.on('finish',()=>observeRequest({method:req.method,path:req.path,status:res.statusCode,ms:performance.now()-started}));next();});
 const AUTH_SECRET=process.env.APP_AUTH_SECRET||'';
 const PUBLIC_LAUNCH=['1','true','yes','on'].includes(String(process.env.PUBLIC_LAUNCH||'').toLowerCase());
 assertLaunchSecurity({publicLaunch:PUBLIC_LAUNCH,secret:AUTH_SECRET});
@@ -159,6 +162,7 @@ async function diagnosticsSnapshot(allProjects=list(),providerSnapshot=providerJ
   const critical=checks.filter(x=>['storage','local-ai','queue'].includes(x.id));
   const recovery=validateRecoverableState(DATA);return {status:critical.every(x=>x.ok)&&recovery.ok?'ready':'degraded',checks:[...checks,{id:'state-recovery',label:'State recovery',ok:recovery.ok,detail:recovery.ok?`${recovery.projectsChecked} projects validated`:`${recovery.issues.length} recovery issue(s)`}],storage:{freeBytes,totalBytes,freePercent},recovery,queue:{pending,recentProviderFailures,historicalProviderFailures:providerFailures},failureSummary:{recentProjects:recentProjectFailures.length,historicalProjects:failedProjects.length},approvalSummary,providerMaintenance:lastProviderMaintenance,textRouting:{policy:text.routing?.policy||null,learning:text.routing?.learning||null,leaderboards:text.routing?.leaderboards||{providers:[],models:[]}},recentProjectFailures,activeProject:active,shuttingDown,generatedAt:new Date().toISOString()};
 }
+app.get('/api/operations',async(req,res)=>{try{const all=list(),providerSnapshot=providerJobsSnapshot(DATA),diagnostics=await diagnosticsSnapshot(all,providerSnapshot);res.json({observability:observabilitySnapshot({windowMinutes:Number(req.query.windowMinutes||60)}),diagnostics,providers:{worker:providerWorkerInventory(DATA),jobs:{counts:providerSnapshot.counts,total:providerSnapshot.total}},publishing:publishQueueSummary(DATA),recovery:validateRecoverableState(DATA)})}catch(e){res.status(500).json({error:'operations snapshot unavailable'})}});
 app.get('/api/diagnostics',async(req,res)=>{try{res.json(await diagnosticsSnapshot())}catch{res.status(500).json({status:'degraded',error:'diagnostics unavailable'})}});
 app.get('/api/stats',(req,res)=>res.json(statsSnapshot()));
 app.get('/api/analytics',(req,res)=>{const snapshot=buildCreatorAnalytics(list(),listPublishJobs(DATA,{}));recordAnalyticsSnapshot(DATA,snapshot);res.json(snapshot)});
@@ -223,6 +227,9 @@ app.post('/api/websites',(req,res)=>{try{res.status(201).json(createSite(DATA,{.
 app.get('/api/websites/:id',(req,res)=>{const x=getSite(DATA,req.params.id);return x?res.json(x):res.status(404).json({error:'not found'})});
 app.get('/api/websites/:id/preview',(req,res)=>{const x=getSite(DATA,req.params.id),file=x?.exports?.html;if(!x)return res.status(404).json({error:'not found'});if(!file||!fs.existsSync(file))return res.status(404).json({error:'preview not found'});res.sendFile(file);});
 app.get('/api/websites/:id/bundle',(req,res)=>{const x=getSite(DATA,req.params.id),file=x?.exports?.zip;if(!x)return res.status(404).json({error:'not found'});if(!file||!fs.existsSync(file))return res.status(404).json({error:'bundle not found'});res.download(file,`${String(x.name||'website').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-website.zip`);});
+app.get('/api/agents',(req,res)=>res.json({agents:listAgents(DATA),policy:{freeOnly:true,arbitraryCode:false,ownerApprovalRequired:true}}));
+app.patch('/api/agents/:id',(req,res)=>{if(req.authActor?.type!=='owner')return res.status(403).json({error:'owner required'});try{res.json(configureAgent(DATA,req.params.id,req.body||{}))}catch(e){res.status(404).json({error:String(e.message||e)})}});
+app.post('/api/agents/:id/plan',(req,res)=>{try{const g=agentGoal(DATA,req.params.id,req.body||{});res.json({...g,plan:planCreatorGoal({goal:g.goal})})}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/creator-agent/tools',(req,res)=>res.json({tools:creatorTools,policy:{autonomy:'approval-gated',cost:'free-only'}}));
 app.post('/api/creator-agent/plan',(req,res)=>{try{res.status(201).json(planCreatorGoal(req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/creator-agent/runs',(req,res)=>{const runs=listRuns(DATA).slice(0,30).map(run=>syncRunWithProjects(DATA,run,load)).map(run=>({...run,artifacts:(run.artifacts||[]).map(a=>a.type==='video'&&a.id?({...a,projectStatus:load(a.id)?.status||a.status,progress:load(a.id)?.progress??null,launchReady:load(a.id)?.qa?.launchReady===true,approval:load(a.id)?.publishApproval?.status||null}):a)}));res.json({runs})});
@@ -251,6 +258,7 @@ app.post('/api/creator-agent/execute',async(req,res)=>{
     const video=artifacts.find(a=>a.type==='video');run=updateRun(DATA,run.id,{status:video?'producing':'awaiting-approval',steps:run.steps,artifacts,checkpoint:video?{stage:'video-production',projectId:video.id,progress:0}:{stage:'approval'},completedAt:new Date().toISOString()});res.status(202).json(run);
   }catch(e){if(run){const msg=String(e.message||e).slice(0,240),steps=(run.steps||[]).map(s=>s.status==='running'?{...s,status:'failed',error:msg,completedAt:new Date().toISOString()}:s);updateRun(DATA,run.id,{status:'failed',steps,error:msg});}res.status(400).json({error:String(e.message||e)})}
 });
+app.post('/api/agents/:id/execute',async(req,res)=>{let run;try{const g=agentGoal(DATA,req.params.id,req.body||{}),plan=planCreatorGoal({goal:g.goal});run=createRun(DATA,plan,{idempotencyKey:String(req.get('idempotency-key')||'').trim().slice(0,120)});const artifacts=[];for(const step of run.steps)await executeCreatorStep(step,plan,run,artifacts);const video=artifacts.find(a=>a.type==='video');run=updateRun(DATA,run.id,{status:video?'producing':'awaiting-approval',steps:run.steps,artifacts,agentId:g.agent.id,checkpoint:video?{stage:'video-production',projectId:video.id,progress:0}:{stage:'approval'},completedAt:new Date().toISOString()});res.status(202).json(run)}catch(e){if(run)updateRun(DATA,run.id,{status:'failed',error:String(e.message||e).slice(0,240)});res.status(400).json({error:String(e.message||e)})}});
 app.post('/api/creator-agent/runs/:id/retry',async(req,res)=>{
   const run=getRun(DATA,req.params.id);if(!run)return res.status(404).json({error:'run not found'});
   const plan=planCreatorGoal({goal:run.goal}),artifacts=[...(run.artifacts||[])],failedStep=(run.steps||[]).find(s=>s.status==='failed');
