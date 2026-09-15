@@ -11,7 +11,7 @@ Benchmark reviewed 2026-09-15 from Digital Maker.AI public product, pricing and 
 | Website builder | Yes | Yes, HTML/CSS preview + ZIP export | Creator OS export control |
 | Characters | Yes | Yes | Comparable |
 | Trend / faceless research | Yes, dedicated tools | Source-grounded research + opportunity scoring | Digital Maker currently stronger on dedicated live market datasets |
-| Store / ad research | Yes | Planned Opportunity Lab adapters | Digital Maker currently ahead |
+| Store / ad research | Yes | Unified Opportunity Lab with source-grounded web evidence; native datasets optional | Digital Maker retains native-dataset edge; Creator OS has integrated evidence workflow |
 | Prompt maker | Yes | Creator Agent planning + source-grounded prompts | Creator OS deeper orchestration |
 | AI chat | Yes | Creator Agent workflow execution | Creator OS action depth |
 | API / MCP | Yes | Yes, scoped hashed keys + MCP tools | Creator OS security/scoping advantage |
@@ -25,8 +25,8 @@ Benchmark reviewed 2026-09-15 from Digital Maker.AI public product, pricing and 
 2. Live Trend Finder with platform-specific search-interest evidence.
 3. Store Finder / digital-product market discovery.
 4. Meta Ad Library intelligence and reusable competitor campaigns.
-5. Rich voice catalogue with previews/favourites and higher-quality local TTS.
-6. Thumbnail generation studio tightly connected to experiments.
+5. Higher-quality multilingual local TTS beyond the current five previewable Flite voices.
+6. Richer thumbnail composition/templates beyond frame-derived experiment variants.
 7. Team workspaces and role-based collaboration.
 
 The scorecard should be updated from observed product evidence, not marketing assumptions.

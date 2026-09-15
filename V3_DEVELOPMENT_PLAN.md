@@ -7,7 +7,7 @@
 - [x] Preserve free-only routing, auth boundaries and approval gates through integrations.
 
 ## V3.2 Opportunity Lab
-- [ ] Unified faceless niche, trend, competitor, store and ad-research workspace (core faceless/trend/competitor scorecards complete; store/ad live connectors pending).
+- [x] Unified faceless niche, trend, competitor, store and ad-research workspace with source-grounded web evidence adapters; native platform datasets remain optional connectors.
 - [x] Evidence/confidence fields for every market signal.
 - [x] Saved searches and repeatable opportunity scorecards.
 
@@ -22,5 +22,5 @@
 - [x] Add long-form recovery smoke tests.
 
 ## V3.5 Competitive Evidence
-- [ ] Maintain feature parity scorecard against Digital Maker.AI.
-- [ ] Require release-gate tests for each claimed differentiator.
+- [x] Maintain feature parity scorecard against Digital Maker.AI.
+- [x] Require release-gate tests for each claimed differentiator.
