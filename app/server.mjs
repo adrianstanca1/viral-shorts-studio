@@ -49,6 +49,8 @@ import { listWorkspaceMembers, createWorkspaceInvite, acceptWorkspaceInvite, rev
 import { recordAudit, readAudit } from './audit-log.mjs';
 import { listPlugins, getPlugin, pluginForTool, setPluginEnabled } from './plugin-registry.mjs';
 import { buildBackupManifest, validateRecoverableState } from './backup-manifest.mjs';
+import { buildBackupBundle, validateBackupBundle, restoreBackupBundle } from './backup-bundle.mjs';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { refreshPortfolio, getPortfolio, decidePortfolioSlot, linkPortfolioProject, portfolioAnalytics } from './content-portfolio.mjs';
 import { monetizationBrief, experimentAllocation } from './monetization-intelligence.mjs';
 import { listAgents, getAgent, configureAgent, agentGoal } from './agent-marketplace.mjs';
@@ -89,6 +91,8 @@ app.use((req,res,next)=>{if(!['GET','HEAD','OPTIONS'].includes(req.method)&&req.
 app.use(createRateLimiter({windowMs:5*60_000,max:Number(process.env.WRITE_RATE_LIMIT||120)}));
 app.get('/api/backup/manifest',(req,res)=>{if(req.authActor?.type!=='owner')return res.status(403).json({error:'owner required'});res.json(buildBackupManifest(DATA))});
 app.get('/api/backup/validate',(req,res)=>{if(req.authActor?.type!=='owner')return res.status(403).json({error:'owner required'});const result=validateRecoverableState(DATA);res.status(result.ok?200:409).json(result)});
+app.get('/api/backup/export',(req,res)=>{if(req.authActor?.type!=='owner')return res.status(403).json({error:'owner required'});const bundle=buildBackupBundle(DATA),gz=gzipSync(Buffer.from(JSON.stringify(bundle)));res.setHeader('Content-Type','application/gzip');res.setHeader('Content-Disposition','attachment; filename=creator-os-safe-backup.json.gz');res.setHeader('Cache-Control','no-store');res.send(gz)});
+app.post('/api/backup/restore',express.raw({type:'application/gzip',limit:'25mb'}),(req,res)=>{if(req.authActor?.type!=='owner')return res.status(403).json({error:'owner required'});try{const bundle=JSON.parse(gunzipSync(req.body).toString('utf8')),preview=validateBackupBundle(bundle);if(!preview.ok)return res.status(400).json(preview);const result=restoreBackupBundle(DATA,bundle,{confirm:String(req.get('x-creator-restore-confirm')||'')});res.json(result)}catch(e){res.status(400).json({error:String(e.message||e).slice(0,240)})}});
 app.get('/api/plugins',(req,res)=>res.json({plugins:listPlugins(DATA),policy:{freeOnly:true,ownerControlsEnablement:true}}));
 app.patch('/api/plugins/:id',(req,res)=>{if(req.authActor?.type!=='owner')return res.status(403).json({error:'owner required'});try{res.json(setPluginEnabled(DATA,req.params.id,req.body?.enabled===true))}catch(e){res.status(404).json({error:String(e.message||e)})}});
 app.get('/api/workspace',(req,res)=>{if(req.authActor?.type!=='owner')return res.status(403).json({error:'owner required'});res.json(listWorkspaceMembers(DATA))});
@@ -324,7 +328,8 @@ function queueVideoProject(body={}){
 app.post('/api/projects',(req,res)=>{
   try{return res.status(202).json(queueVideoProject(req.body||{}))}catch(e){const msg=String(e.message||e);return res.status(/Queue full/.test(msg)?429:/restarting/.test(msg)?503:400).json({error:msg})}
 });
-/* legacy creation block removed */
+/* legacy creation route removed after queueVideoProject consolidation */
+
 /*
 app.post('/api/projects-legacy',(req,res)=>{
   if(shuttingDown)return res.status(503).json({error:'Studio is restarting; retry shortly'});
