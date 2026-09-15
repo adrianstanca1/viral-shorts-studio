@@ -23,6 +23,6 @@ const checks=[
   ['V5 tracked work complete',!/^\s*- \[ \]/m.test(v5)],
   ['agent marketplace',server.includes("/api/agents")&&server.includes('agentGoal')],
   ['operations observability',server.includes("/api/operations")&&server.includes('observabilitySnapshot')],
-  ['V6 tracked work complete except final deploy verification',!/^\s*- \[ \]/m.test(v6.replace(/- \[ \] Production deploy, public smoke test and exact GitHub Actions verification\./,''))]
+  ['V6 tracked work complete',!/^\s*- \[ \]/m.test(v6)]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);

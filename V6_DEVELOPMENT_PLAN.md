@@ -18,4 +18,4 @@
 ## V6.4 Release Assurance
 - [x] Add V6 marketplace/observability checks to the competitive release gate.
 - [x] Keep all V1-V6 plan files at zero unchecked items before final release.
-- [ ] Production deploy, public smoke test and exact GitHub Actions verification.
+- [x] Production deploy, public smoke test and exact GitHub Actions verification.
