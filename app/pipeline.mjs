@@ -47,6 +47,8 @@ export function writePhraseCaptions(file,text,duration,{wordsPerCue=4}={}){
 }
 const captionStyles={bold:'FontName=DejaVu Sans,FontSize=20,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=3,Shadow=1,Alignment=2,MarginV=110',minimal:'FontName=DejaVu Sans,FontSize=18,Bold=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00202020,Outline=2,Shadow=0,Alignment=2,MarginV=90',documentary:'FontName=DejaVu Sans,FontSize=19,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=2,Shadow=1,Alignment=2,MarginV=95'};
 const captionFilter=(file,style='bold')=>`subtitles=${file}:force_style='${captionStyles[style]||captionStyles.bold}'`;
+export function dimensionsForAspect(aspect='9:16'){return aspect==='16:9'?{width:1280,height:720}:aspect==='1:1'?{width:720,height:720}:{width:720,height:1280}}
+export function aspectMatches(width,height,aspect='9:16'){const d=dimensionsForAspect(aspect);return Math.abs((Number(width)||0)/(Number(height)||1)-d.width/d.height)<0.02}
 export function captionWordsForStyle(style='bold'){return style==='minimal'?7:style==='documentary'?5:4;}
 
 
@@ -274,15 +276,17 @@ async function makeNarration(text,outWav,targetDuration,{language='en',voice='au
   return target;
 }
 
-async function makeImageClip(image,out,duration,zoomIn=true){
+async function makeImageClip(image,out,duration,zoomIn=true,aspect='9:16'){
+  const {width,height}=dimensionsForAspect(aspect);
   const frames=Math.max(75,Math.round(duration*25));
   const z=zoomIn?`min(zoom+0.0008,1.12)`:`if(lte(zoom,1.0),1.12,max(1.0,zoom-0.0008))`;
-  const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=720x1280:fps=25,fade=t=in:st=0:d=0.18,fade=t=out:st=${Math.max(0.2,duration-0.18)}:d=0.18,format=yuv420p`;
+  const vf=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=25,fade=t=in:st=0:d=0.18,fade=t=out:st=${Math.max(0.2,duration-0.18)}:d=0.18,format=yuv420p`;
   await run('ffmpeg',['-y','-loop','1','-i',image,'-vf',vf,'-t',String(duration),'-r','25','-an','-c:v','libx264','-threads','2','-preset','veryfast','-crf','24',out]);
 }
 
-async function makeVideoClip(video,out,duration){
-  const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=25,fade=t=in:st=0:d=0.15,fade=t=out:st=${Math.max(0.2,duration-0.15)}:d=0.15,format=yuv420p`;
+async function makeVideoClip(video,out,duration,aspect='9:16'){
+  const {width,height}=dimensionsForAspect(aspect);
+  const vf=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},fps=25,fade=t=in:st=0:d=0.15,fade=t=out:st=${Math.max(0.2,duration-0.15)}:d=0.15,format=yuv420p`;
   await run('ffmpeg',['-y','-stream_loop','-1','-i',video,'-vf',vf,'-t',String(duration),'-an','-c:v','libx264','-threads','2','-preset','veryfast','-crf','24',out]);
 }
 
@@ -321,7 +325,8 @@ async function makeWhiteboardScene(scene,sceneDir,title,sharedNarration=null){
   const duration=sharedNarration?.duration||await makeNarration(scene.narration,wav,scene.durationHint,{language:scene.language,voice:scene.voice});
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
   const output=path.join(sceneDir,'scene.mp4'), board=path.join(sceneDir,'board.png');
-  const spec={title:String(title||'Whiteboard Short'),text:scene.narration,scene:scene.index,width:720,height:1280,duration,audio:wav,output,boardOutput:board,captions:'captions.srt',preset:'veryfast',crf:24};
+  const {width,height}=dimensionsForAspect(scene.aspect);
+  const spec={title:String(title||'Whiteboard Short'),text:scene.narration,scene:scene.index,width,height,duration,audio:wav,output,boardOutput:board,captions:'captions.srt',preset:'veryfast',crf:24};
   fs.writeFileSync(path.join(sceneDir,'whiteboard.json'),JSON.stringify(spec));
   const python=process.env.WHITEBOARD_PYTHON||'/opt/whiteboard/bin/python', adapter=process.env.WHITEBOARD_ADAPTER||'/app/python/whiteboard_scene.py';
   const raw=await run(python,[adapter,'--spec','whiteboard.json'],{cwd:sceneDir,env:{...process.env,FFMPEG_PATH:'ffmpeg',RENDER_THREADS:'2'}});
@@ -335,7 +340,7 @@ async function makeAiImportedScene(scene,sceneDir,ai,sharedNarration=null){
   const media=path.join(sceneDir,ai.kind==='video'?'ai-source.mp4':'ai-source.jpg');
   if(ai.localFile){fs.copyFileSync(ai.localFile,media);}else await download(ai.url,media,ai.kind==='video'?80_000_000:20_000_000);
   const visual=path.join(sceneDir,'ai-visual.mp4');
-  if(ai.kind==='video')await makeVideoClip(media,visual,duration);else await makeImageClip(media,visual,duration,true);
+  if(ai.kind==='video')await makeVideoClip(media,visual,duration,scene.aspect);else await makeImageClip(media,visual,duration,true,scene.aspect);
   const overlayFile=path.join(sceneDir,'overlay.txt');fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
@@ -408,8 +413,9 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   if(!downloaded.length){
     for(let i=0;i<2;i++){
       const dest=path.join(sceneDir,`fallback-${i+1}.png`);
+      const {width,height}=dimensionsForAspect(scene.aspect);
       const text=(i===0?scene.overlay:scene.narration).replace(/[\\':]/g,' ').replace(/\s+/g,' ').slice(0,90);
-      await run('ffmpeg',['-y','-f','lavfi','-i',`color=c=${i===0?'0x10131a':'0x251b12'}:s=720x1280:d=1`,'-vf',`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${text}':fontcolor=white:fontsize=40:borderw=3:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2`,'-frames:v','1',dest]);
+      await run('ffmpeg',['-y','-f','lavfi','-i',`color=c=${i===0?'0x10131a':'0x251b12'}:s=${width}x${height}:d=1`,'-vf',`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${text}':fontcolor=white:fontsize=40:borderw=3:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2`,'-frames:v','1',dest]);
       downloaded.push({title:'Generated fallback card',url:'',source:'local',license:'original',artist:'Viral Shorts Studio',type:'generated',local:dest});
     }
   }
@@ -428,10 +434,10 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   const half=duration/2;
   const c1=path.join(sceneDir,'clip-1.mp4'), c2=path.join(sceneDir,'clip-2.mp4');
   if(motionVideo){
-    try{await makeVideoClip(motionVideo.local,c1,half);breakerSuccess('wikimedia-video');}
-    catch(error){breakerFailure('wikimedia-video',error);motionVideo=null;await makeImageClip(downloaded[0].local,c1,half,true);}
-  }else await makeImageClip(downloaded[0].local,c1,half,true);
-  await makeImageClip(downloaded[motionVideo?0:1].local,c2,half,false);
+    try{await makeVideoClip(motionVideo.local,c1,half,scene.aspect);breakerSuccess('wikimedia-video');}
+    catch(error){breakerFailure('wikimedia-video',error);motionVideo=null;await makeImageClip(downloaded[0].local,c1,half,true,scene.aspect);}
+  }else await makeImageClip(downloaded[0].local,c1,half,true,scene.aspect);
+  await makeImageClip(downloaded[motionVideo?0:1].local,c2,half,false,scene.aspect);
   const list=path.join(sceneDir,'clips.txt');
   fs.writeFileSync(list,`file '${c1}'\nfile '${c2}'\n`);
   const silent=path.join(sceneDir,'silent.mp4');
@@ -607,8 +613,8 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const probe=JSON.parse(await run('ffprobe',['-v','error','-show_streams','-show_format','-of','json',final]));
     const videoStream=(probe.streams||[]).find(x=>x.codec_type==='video'),audioStream=(probe.streams||[]).find(x=>x.codec_type==='audio');
     const actualDuration=Number(probe.format?.duration||0),durationDelta=Number((actualDuration-Number(project.duration)).toFixed(2));
-    const vertical=!!videoStream&&Number(videoStream.height)>Number(videoStream.width),audio=!!audioStream;
-    if(!videoStream||!vertical||!audio||!Number.isFinite(actualDuration)||actualDuration<=0)throw new Error('Final media QA failed: valid vertical video with audio was not produced');
+    const aspectOk=!!videoStream&&aspectMatches(videoStream.width,videoStream.height,project.aspect||'9:16'),vertical=!!videoStream&&Number(videoStream.height)>Number(videoStream.width),audio=!!audioStream;
+    if(!videoStream||!aspectOk||!audio||!Number.isFinite(actualDuration)||actualDuration<=0)throw new Error(`Final media QA failed: valid ${project.aspect||'9:16'} video with audio was not produced`);
     const mediaQa={width:Number(videoStream.width||0),height:Number(videoStream.height||0),videoCodec:videoStream.codec_name||null,audioCodec:audioStream.codec_name||null,fileBytes:fs.statSync(final).size};
     const realVideoScenes=scenes.filter(s=>s.hasRealVideo).length;
     const visualMix=scenes.reduce((m,s)=>{const k=s.visualType||'unknown';m[k]=(m[k]||0)+1;return m;},{});
@@ -630,8 +636,8 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const publish={title:`${slug}: the part most people miss`.slice(0,90),description:`A fast, source-backed ${project.niche.replace('-', ' ')} short about ${slug}. Verify claims using the included credits before publishing.`,hashtags:['#shorts',`#${project.niche.replace(/-/g,'')}`,'#storytelling']};
     stageMetric(metrics,'totalSeconds',totalStarted);
     editingRhythm=editingRhythmAnalysis(scenes,storyboard);const editingReady=editingRhythm.score>=70&&editingRhythm.adjacentRepeats.length<=Math.max(1,Math.floor(scenes.length*.15));
-    const launchReady=vertical&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady&&narrativeArc.score>=78&&averageNarrationScore>=78&&weakNarrationScenes.length<=Math.max(1,Math.floor(scenes.length*.2))&&averageVisualScore>=70&&weakVisualScenes.length<=Math.floor(scenes.length*.25)&&editingReady;
-    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,audio,launchReady,media:mediaQa,retention,narrativeArc,editingRhythm,editingReady,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,narrationScores,averageNarrationScore,weakNarrationScenes,narrationRepair:project.narrationRepair||{count:0,scenes:[]},viralityScore},publish,metrics,completedAt:new Date().toISOString()});
+    const launchReady=aspectOk&&audio&&Math.abs(durationDelta)<=0.5&&scenes.length===storyboard.length&&acceptedScenes>=Math.ceil(scenes.length*.75)&&retentionReady&&narrativeArc.score>=78&&averageNarrationScore>=78&&weakNarrationScenes.length<=Math.max(1,Math.floor(scenes.length*.2))&&averageVisualScore>=70&&weakVisualScenes.length<=Math.floor(scenes.length*.25)&&editingReady;
+    update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,aspectOk,expectedAspect:project.aspect||'9:16',audio,launchReady,media:mediaQa,retention,narrativeArc,editingRhythm,editingReady,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,narrationScores,averageNarrationScore,weakNarrationScenes,narrationRepair:project.narrationRepair||{count:0,scenes:[]},viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
     const failedAt=new Date().toISOString(),failedStage=String(project.status||'unknown'),message=String(error.message||error).slice(0,1200);

@@ -149,4 +149,5 @@ const maintenanceRoot=fs.mkdtempSync(path.join(os.tmpdir(),'viral-provider-maint
 const orphan=createProviderJob(maintenanceRoot,{projectId:'missing-project',sceneIndex:1,provider:'external',kind:'video',verifiedFree:true});
 const maintained=maintainProviderJobs(maintenanceRoot,{projectIds:['live-project'],retentionDays:30});assert.equal(maintained.orphanedRetired,1);assert.equal(getProviderJob(maintenanceRoot,orphan.id).status,'expired');
 fs.rmSync(maintenanceRoot,{recursive:true,force:true});
+const aspectModule=await import('./pipeline.mjs');assert.deepEqual(aspectModule.dimensionsForAspect('9:16'),{width:720,height:1280});assert.deepEqual(aspectModule.dimensionsForAspect('16:9'),{width:1280,height:720});assert.deepEqual(aspectModule.dimensionsForAspect('1:1'),{width:720,height:720});assert.equal(aspectModule.aspectMatches(1280,720,'16:9'),true);assert.equal(aspectModule.aspectMatches(720,1280,'16:9'),false);
 console.log('self-test: ok');
