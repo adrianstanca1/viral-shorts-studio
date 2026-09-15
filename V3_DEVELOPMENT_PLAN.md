@@ -7,9 +7,9 @@
 - [x] Preserve free-only routing, auth boundaries and approval gates through integrations.
 
 ## V3.2 Opportunity Lab
-- [ ] Unified faceless niche, trend, competitor, store and ad-research workspace.
-- [ ] Evidence/confidence fields for every market signal.
-- [ ] Saved searches and repeatable opportunity scorecards.
+- [ ] Unified faceless niche, trend, competitor, store and ad-research workspace (core faceless/trend/competitor scorecards complete; store/ad live connectors pending).
+- [x] Evidence/confidence fields for every market signal.
+- [x] Saved searches and repeatable opportunity scorecards.
 
 ## V3.3 Voice + Thumbnail Studio
 - [ ] Voice catalogue with local-first voices, preview metadata and favourites.
