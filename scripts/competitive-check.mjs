@@ -99,6 +99,11 @@ const checks=[
   ['integration keys owner only',server.includes("app.post('/api/integration-keys',(req,res)=>{if(req.authActor?.type!=='owner')")&&server.includes("app.delete('/api/integration-keys/:id',(req,res)=>{if(req.authActor?.type!=='owner')")],
   ['provider worker healthcheck',read('compose.yaml').includes('provider-worker-status.json')&&read('compose.yaml').includes('age<90000')],
   ['durable safe backup coverage',backup.includes('content-portfolio.json')&&backup.includes('voice-studio.json')&&backup.includes('regeneratedAfterRestore')],
+  ['provider admin owner boundary',server.includes("app.post('/api/provider-jobs/claim',(req,res)=>{if(req.authActor?.type!=='owner')")&&server.includes("app.post('/api/providers/:id/smoke',async(req,res)=>{if(req.authActor?.type!=='owner')")],
+  ['worker evidence endpoint retained',read('app/security.mjs').includes("p==='/api/provider-verification/evidence'")],
+  ['audit history safe backup',backup.includes('auditEvents')&&backup.includes('audit-log.jsonl')&&backup.includes('checksumPayload')],
+  ['text routing learning recoverable',backup.includes('text-router-learning.json')&&read('app/backup-manifest.mjs').includes('text-router-learning.json')],
+  ['reproducible container images',read('Dockerfile').includes('node:22-bookworm-slim@sha256:')&&read('compose.yaml').includes('ollama/ollama@sha256:')],
   ['V22 tracked work complete',!/^\s*- \[ \]/m.test(v22)]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);
