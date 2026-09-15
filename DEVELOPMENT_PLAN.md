@@ -32,9 +32,9 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 - [x] Connect Brand Brain styles to generated exports.
 
 ## Phase 5 — Analytics and Learning
-- [ ] Add production analytics from projects, QA and publishing outcomes.
-- [ ] Feed successful patterns into Brand Brain without overwriting user-defined identity.
-- [ ] Add title/thumbnail experiment tracking.
+- [x] Add production analytics from projects, QA and publishing outcomes.
+- [x] Feed successful patterns into Brand Brain without overwriting user-defined identity.
+- [x] Add title/thumbnail experiment tracking.
 - [ ] Add YouTube analytics only after scopes and connector are explicitly configured.
 
 ## Phase 6 — Performance and Launch Hardening

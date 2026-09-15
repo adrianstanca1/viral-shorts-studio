@@ -30,6 +30,7 @@ import { listProducts, getProduct, createProduct } from './product-studio.mjs';
 import { listSites, getSite, createSite } from './website-studio.mjs';
 import { creatorTools, planCreatorGoal } from './creator-agent.mjs';
 import { listRuns, createRun, updateRun, syncRunWithProjects } from './creator-runs.mjs';
+import { buildCreatorAnalytics, recordAnalyticsSnapshot, readAnalytics, listExperiments, createExperiment, updateExperiment } from './creator-analytics.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -116,6 +117,11 @@ async function diagnosticsSnapshot(allProjects=list(),providerSnapshot=providerJ
 }
 app.get('/api/diagnostics',async(req,res)=>{try{res.json(await diagnosticsSnapshot())}catch{res.status(500).json({status:'degraded',error:'diagnostics unavailable'})}});
 app.get('/api/stats',(req,res)=>res.json(statsSnapshot()));
+app.get('/api/analytics',(req,res)=>{const snapshot=buildCreatorAnalytics(list(),listPublishJobs(DATA,{}));recordAnalyticsSnapshot(DATA,snapshot);res.json(snapshot)});
+app.get('/api/analytics/history',(req,res)=>res.json(readAnalytics(DATA)));
+app.get('/api/experiments',(req,res)=>res.json({experiments:listExperiments(DATA)}));
+app.post('/api/experiments',(req,res)=>{try{const projectId=String(req.body?.projectId||'');if(!load(projectId))return res.status(404).json({error:'project not found'});res.status(201).json(createExperiment(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.patch('/api/experiments/:id',(req,res)=>{try{res.json(updateExperiment(DATA,req.params.id,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/dashboard',async(req,res)=>{try{const all=list(),providerSnapshot=providerJobsSnapshot(DATA),diagnostics=await diagnosticsSnapshot(all,providerSnapshot);res.json({health:{status:'ok',service:'viral-shorts-studio',mode:'autonomous-production'},projects:all.map(projectSummary),stats:statsSnapshot(all),providerJobs:{counts:providerSnapshot.counts,total:providerSnapshot.total,providers:providerSnapshot.providers,jobs:providerSnapshot.jobs.slice(0,100)},publishQueue:publishQueueSummary(DATA),publishingConnectors:{google:googleOAuthStatus(DATA),youtube:youtubePublisherStatus(youtubeCredentialEnv(DATA))},providerVerification:{state:readVerification(DATA),worker:providerWorkerInventory(DATA)},diagnostics})}catch{res.status(500).json({error:'dashboard unavailable'})}});
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
