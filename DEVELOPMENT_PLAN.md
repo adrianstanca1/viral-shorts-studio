@@ -39,7 +39,7 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 
 ## Phase 6 — Performance and Launch Hardening
 - [ ] Benchmark short, 5 min and 20 min projects without blocking live work.
-- [ ] Add chapter-level checkpoints for long-form projects.
+- [x] Add chapter-level checkpoints for long-form projects.
 - [ ] Profile FFmpeg/CPU/memory bottlenecks and tune concurrency.
 - [ ] Verify exact GitHub CI status for release commits.
 - [ ] Run public-domain, auth, recovery, approval and publish-gate smoke tests.
