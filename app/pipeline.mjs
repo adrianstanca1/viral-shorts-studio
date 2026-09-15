@@ -266,14 +266,28 @@ async function download(url,dest,maxBytes=12_000_000){
   throw last;
 }
 
-const fliteVoices={en:'slt',fr:'slt',es:'slt',it:'slt',de:'slt'};
+const fliteVoices={en:'slt',fr:'slt',es:'slt',it:'slt',de:'slt',ro:'slt'};
+const piperVoiceModels={
+  'piper-en-lessac':['en','/opt/piper-voices/en_US-lessac-medium.onnx'],
+  'piper-fr-siwis':['fr','/opt/piper-voices/fr_FR-siwis-medium.onnx'],
+  'piper-es-sharvard':['es','/opt/piper-voices/es_ES-sharvard-medium.onnx'],
+  'piper-it-serena':['it','/opt/piper-voices/it_IT-serena-medium.onnx'],
+  'piper-de-thorsten':['de','/opt/piper-voices/de_DE-thorsten-medium.onnx'],
+  'piper-ro-mihai':['ro','/opt/piper-voices/ro_RO-mihai-medium.onnx']
+};
+export function narrationRoute({language='en',voice='auto'}={}){
+  const explicit=piperVoiceModels[voice],lang=String(language||'en').toLowerCase();
+  if(explicit&&explicit[0]===lang)return {engine:'piper',model:explicit[1],voice};
+  const envModel=process.env[`PIPER_MODEL_${lang.toUpperCase()}`]||process.env.PIPER_MODEL;
+  return envModel?{engine:'piper',model:envModel,voice:'auto'}:{engine:'flite',model:null,voice:['slt','awb','rms','kal','kal16'].includes(voice)?voice:(fliteVoices[lang]||'slt')};
+}
 async function makeNarration(text,outWav,targetDuration,{language='en',voice='auto'}={}){
   const safe=text.replace(/[\\':]/g,' ').replace(/\s+/g,' ').slice(0,420);
   const raw=outWav.replace(/\.wav$/,'.raw.wav');
-  let engine='flite';
-  const piper=process.env.PIPER_BIN||'piper',model=process.env[`PIPER_MODEL_${String(language).toUpperCase()}`]||process.env.PIPER_MODEL;
-  if(model){
-    try{await run(piper,['--model',model,'--output_file',raw],{input:safe});engine='piper';}catch{}
+  const route=narrationRoute({language,voice});let engine='flite';
+  const piper=process.env.PIPER_BIN||'/opt/piper/bin/piper';
+  if(route.engine==='piper'&&route.model&&fs.existsSync(route.model)){
+    try{await run(piper,['--model',route.model,'--output_file',raw],{input:safe});engine='piper';}catch{}
   }
   if(engine==='flite'){const localVoice=['slt','awb','rms','kal','kal16'].includes(voice)?voice:(fliteVoices[language]||'slt');await run('ffmpeg',['-y','-f','lavfi','-i',`flite=text='${safe}':voice=${localVoice}`,'-ar','44100','-ac','1',raw]);}
   const measured=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',raw]))||targetDuration;

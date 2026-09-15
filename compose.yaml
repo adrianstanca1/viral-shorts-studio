@@ -35,13 +35,18 @@ services:
       AUTO_CLOUD_ENHANCE: ${AUTO_CLOUD_ENHANCE:-true}
       WHITEBOARD_PYTHON: /opt/whiteboard/bin/python
       WHITEBOARD_ADAPTER: /app/python/whiteboard_scene.py
-      PIPER_BIN: ${PIPER_BIN:-piper}
+      PIPER_BIN: ${PIPER_BIN:-/opt/piper/bin/piper}
       PIPER_MODEL: ${PIPER_MODEL:-}
-      PIPER_MODEL_EN: ${PIPER_MODEL_EN:-}
-      PIPER_MODEL_FR: ${PIPER_MODEL_FR:-}
-      PIPER_MODEL_ES: ${PIPER_MODEL_ES:-}
-      PIPER_MODEL_IT: ${PIPER_MODEL_IT:-}
-      PIPER_MODEL_DE: ${PIPER_MODEL_DE:-}
+      PIPER_MODEL_EN: ${PIPER_MODEL_EN:-/opt/piper-voices/en_US-lessac-medium.onnx}
+      PIPER_MODEL_FR: ${PIPER_MODEL_FR:-/opt/piper-voices/fr_FR-siwis-medium.onnx}
+      PIPER_MODEL_ES: ${PIPER_MODEL_ES:-/opt/piper-voices/es_ES-sharvard-medium.onnx}
+      PIPER_MODEL_IT: ${PIPER_MODEL_IT:-/opt/piper-voices/it_IT-serena-medium.onnx}
+      PIPER_MODEL_DE: ${PIPER_MODEL_DE:-/opt/piper-voices/de_DE-thorsten-medium.onnx}
+      PIPER_MODEL_RO: ${PIPER_MODEL_RO:-/opt/piper-voices/ro_RO-mihai-medium.onnx}
+      TIKTOK_PUBLISH_ENABLED: ${TIKTOK_PUBLISH_ENABLED:-false}
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      TIKTOK_DEFAULT_PRIVACY: ${TIKTOK_DEFAULT_PRIVACY:-SELF_ONLY}
+      AUTO_EXECUTE_SCHEDULED_TIKTOK: ${AUTO_EXECUTE_SCHEDULED_TIKTOK:-false}
       PROVIDER_REGISTRY_FILE: /app/provider-registry.json
       PEXELS_KEY: ${PEXELS_KEY:-}
       PIXABAY_KEY: ${PIXABAY_KEY:-}
