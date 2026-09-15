@@ -16,4 +16,4 @@
 
 ## V21.4 Release assurance
 - [x] Extend self-tests for time-windowed failures and preview safety.
-- [ ] Run release checks, commit, push, deploy only viral-shorts and verify health/CI.
+- [x] Run release checks, commit, push, deploy only viral-shorts and verify health/CI.
