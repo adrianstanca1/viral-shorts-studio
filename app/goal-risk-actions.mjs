@@ -1,0 +1,3 @@
+export function goalRiskActions(portfolio={goals:[]}){
+  const out=[];for(const row of portfolio.goals||[]){const g=row.goal||{},risk=row.risk;if(g.status!=='active'||!['high','medium'].includes(risk))continue;const p=row.progress||{},actual=p.actual||{},target=p.target||g.target||{};out.push({type:'goal-recovery',goalId:g.id,priority:risk==='high'?88:78,message:`Goal ${g.name} is ${risk} risk: ${actual.views||0}/${target.views||0} views observed.`,platform:g.platform||'all',niche:g.niche||'all',provenance:{sources:[{type:'observed-goal-progress',id:g.id,label:g.name,observed:true,evidence:{risk,completion:row.completion,actual,target}}]}})}return out.sort((a,b)=>b.priority-a.priority)
+}
