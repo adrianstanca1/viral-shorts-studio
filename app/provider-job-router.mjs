@@ -20,7 +20,7 @@ export function createProviderJob(root,input={}){
   const id=String(input.jobId||crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,100);
   const kind=String(input.kind||'video').toLowerCase();if(!['image','video'].includes(kind))throw new Error('unsupported job kind');
   const ttlSeconds=clamp(Number(input.ttlSeconds||7200),300,86400),createdAt=nowIso();
-  const record={id,provider,projectId,sceneIndex,kind,prompt:String(input.prompt||'').slice(0,4000),verifiedFree:input.verifiedFree===true,status:'pending',priority:clamp(Number(input.priority||0),0,100),attempts:0,createdAt,updatedAt:createdAt,expiresAt:new Date(Date.now()+ttlSeconds*1000).toISOString()};
+  const record={id,provider,projectId,sceneIndex,assetId:input.assetId?String(input.assetId).slice(0,120):null,targetType:input.assetId?'creator-asset':'project-scene',kind,prompt:String(input.prompt||'').slice(0,4000),verifiedFree:input.verifiedFree===true,status:'pending',priority:clamp(Number(input.priority||0),0,100),attempts:0,createdAt,updatedAt:createdAt,expiresAt:new Date(Date.now()+ttlSeconds*1000).toISOString()};
   if(!record.verifiedFree)throw new Error('job must be verified free/no-charge');
   return write(root,record);
 }

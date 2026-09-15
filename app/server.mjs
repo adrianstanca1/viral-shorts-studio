@@ -23,7 +23,7 @@ import { googleOAuthStatus, beginGoogleOAuth, finishGoogleOAuth, googleLoginAuth
 import { saveGoogleOAuthClientAuthenticated, googleSetupPage, googleSetupSuccessPage } from './google-setup.mjs';
 import { verifyOwnerPassword, createOwnerRecovery, ownerRecoveryStatus, completeOwnerRecovery } from './owner-auth.mjs';
 import { recoveryPage, recoveryCookie, setRecoveryCookie, clearRecoveryCookie } from './owner-recovery-page.mjs';
-import { imageKinds, listCreatorAssets, createImageBrief, createCharacter, getCharacter } from './creator-assets.mjs';
+import { imageKinds, listCreatorAssets, createImageBrief, createCharacter, getCharacter, getImageAsset, resolveImageAsset, failImageAsset } from './creator-assets.mjs';
 import { readBrandBrain, saveBrandBrain, brandPrompt } from './brand-brain.mjs';
 import { runResearch, listResearch, researchPrompt } from './research-studio.mjs';
 import { listProducts, createProduct } from './product-studio.mjs';
@@ -130,7 +130,8 @@ app.get('/api/capabilities',(req,res)=>res.json({
 
 
 app.get('/api/creator-assets',(req,res)=>res.json({...listCreatorAssets(DATA),imageKinds:imageKinds()}));
-app.post('/api/image-creations',(req,res)=>{try{const item=createImageBrief(DATA,req.body||{}),chosen=chooseFreeProvider(DATA,'auto');let providerJob=null;if(chosen&&canQueueFreeProvider(chosen)){providerJob=createProviderJob(DATA,{provider:chosen.id,projectId:`asset-${item.id}`,sceneIndex:1,kind:'image',prompt:item.prompt,verifiedFree:true,priority:55});}res.status(201).json({...item,providerJob,route:chosen?{provider:chosen.id,executable:!!chosen.executable,verifiedFree:!!chosen.verifiedFree}:null})}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/creator-assets/:id',(req,res)=>{const item=getImageAsset(DATA,req.params.id);return item?res.json(item):res.status(404).json({error:'not found'})});
+app.post('/api/image-creations',(req,res)=>{try{const item=createImageBrief(DATA,req.body||{}),chosen=chooseFreeProvider(DATA,'auto');let providerJob=null;if(chosen&&canQueueFreeProvider(chosen)){providerJob=createProviderJob(DATA,{provider:chosen.id,projectId:`asset-${item.id}`,assetId:item.id,sceneIndex:1,kind:'image',prompt:item.prompt,verifiedFree:true,priority:55});}res.status(201).json({...item,providerJob,route:chosen?{provider:chosen.id,executable:!!chosen.executable,verifiedFree:!!chosen.verifiedFree}:null})}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.post('/api/characters',(req,res)=>{try{res.status(201).json(createCharacter(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/characters/:id',(req,res)=>{const x=getCharacter(DATA,req.params.id);return x?res.json(x):res.status(404).json({error:'not found'})});
 app.get('/api/brand-brain',(req,res)=>res.json(readBrandBrain(DATA)));
@@ -240,6 +241,7 @@ app.post('/api/provider-jobs/:id/resolve-local',(req,res)=>{
     if(existing.status==='ready')return res.json({job:existing,alreadyResolved:true});
     if(existing.status!=='leased')return res.status(409).json({error:'provider job must be leased by a worker'});
     const localFile=String(req.body?.localFile||''),kind=String(req.body?.kind||existing.kind||'image').toLowerCase();
+    if(existing.assetId){if(kind!=='image')return res.status(409).json({error:'creator asset expects image result'});const asset=resolveImageAsset(DATA,existing.assetId,{kind,localFile,provider:existing.provider,jobId:existing.id,model:req.body?.model});existing.status='ready';existing.resultKind=kind;existing.localFile=localFile;existing.model=String(req.body?.model||'').slice(0,200);delete existing.workerId;delete existing.leaseUntil;existing.updatedAt=new Date().toISOString();fs.writeFileSync(path.join(DATA,'provider-jobs',`${existing.id}.json`),JSON.stringify(existing,null,2));return res.json({job:existing,asset});}
     const item=registerLocalAiCandidate(DATA,existing.projectId,existing.sceneIndex,{provider:existing.provider,kind,localFile,prompt:existing.prompt,jobId:existing.id,verifiedFree:true});
     existing.status='ready';existing.resultKind=kind;existing.localFile=localFile;existing.model=String(req.body?.model||'').slice(0,200);delete existing.workerId;delete existing.leaseUntil;existing.updatedAt=new Date().toISOString();
     fs.writeFileSync(path.join(DATA,'provider-jobs',`${existing.id}.json`),JSON.stringify(existing,null,2));
@@ -255,7 +257,7 @@ app.post('/api/provider-jobs/:id/resolve-local',(req,res)=>{
 app.post('/api/provider-jobs/:id/resolve',(req,res)=>{
   try{
     const existing=getProviderJob(DATA,req.params.id);if(!existing)return res.status(404).json({error:'provider job not found'});if(existing.status==='ready')return res.json({job:existing,alreadyResolved:true});
-    const job=resolveProviderJob(DATA,req.params.id,req.body||{});const j=load(job.projectId);if(!j)return res.status(404).json({error:'project not found'});
+    const job=resolveProviderJob(DATA,req.params.id,req.body||{});if(job.assetId){const asset=resolveImageAsset(DATA,job.assetId,{kind:job.resultKind,url:job.url,provider:job.provider,jobId:job.id,model:req.body?.model});return res.json({job,asset});}const j=load(job.projectId);if(!j)return res.status(404).json({error:'project not found'});
     const item=registerAiCandidate(DATA,job.projectId,job.sceneIndex,{provider:job.provider,kind:job.resultKind,url:job.url,prompt:job.prompt,jobId:job.id,verifiedFree:true});
     if(['complete','failed'].includes(j.status)){
       archiveSceneVariant(j,job.sceneIndex);const scene=j.storyboard?.find(s=>s.index===job.sceneIndex);if(scene)scene.variantSeed=Number(scene.variantSeed||0)+1;
@@ -265,7 +267,7 @@ app.post('/api/provider-jobs/:id/resolve',(req,res)=>{
     res.json({job,item,projectStatus:j.status});
   }catch(e){res.status(400).json({error:String(e.message||e)})}
 });
-app.post('/api/provider-jobs/:id/fail',(req,res)=>{try{res.json(failProviderJob(DATA,req.params.id,req.body?.error))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.post('/api/provider-jobs/:id/fail',(req,res)=>{try{const job=failProviderJob(DATA,req.params.id,req.body?.error);if(job.assetId)failImageAsset(DATA,job.assetId,job.error);res.json(job)}catch(e){res.status(400).json({error:String(e.message||e)})}});
 
 app.post('/api/projects/:id/scenes/:index/regenerate',(req,res)=>{
   const j=load(req.params.id); if(!j)return res.status(404).json({error:'not found'});
@@ -334,7 +336,7 @@ app.get('/api/projects/:id/publish-manifest',(req,res)=>{const j=load(req.params
 app.delete('/api/projects/:id',(req,res)=>{const j=load(req.params.id);if(!j)return res.status(404).json({error:'not found'});if(!['complete','failed'].includes(j.status))return res.status(409).json({error:'Project is busy'});const providerJobsDeleted=deleteProviderJobsForProject(DATA,j.id),aiInboxDeleted=deleteAiCandidatesForProject(DATA,j.id),publishJobsDeleted=deletePublishJobsForProject(DATA,j.id);jobs.delete(j.id);fs.rmSync(projectDir(j.id),{recursive:true,force:true});res.json({deleted:true,id:j.id,providerJobsDeleted,aiInboxDeleted,publishJobsDeleted});});
 
 for(const job of list()){let changed=false;if(job.status==='failed'&&!job.failedStage){job.failedStage=inferFailureStage(job);changed=true;}const hadApproval=!!job.publishApproval?.status;if(job.status==='complete')ensurePublishApproval(job,{required:REQUIRE_PUBLISH_APPROVAL});const recovered=recoverProjectState(job);if(recovered.changed||changed||(!hadApproval&&!!job.publishApproval?.status))save(job);}
-const maintainProviderState=()=>{const result=maintainProviderJobs(DATA,{projectIds:list().map(x=>x.id),retentionDays:Number(process.env.PROVIDER_JOB_RETENTION_DAYS||30)});lastProviderMaintenance={...result,ranAt:new Date().toISOString()};return lastProviderMaintenance;};
+const maintainProviderState=()=>{const assetIds=(listCreatorAssets(DATA).assets||[]).map(x=>`asset-${x.id}`);const result=maintainProviderJobs(DATA,{projectIds:[...list().map(x=>x.id),...assetIds],retentionDays:Number(process.env.PROVIDER_JOB_RETENTION_DAYS||30)});lastProviderMaintenance={...result,ranAt:new Date().toISOString()};return lastProviderMaintenance;};
 maintainProviderState();verifyProviders(DATA).catch(()=>{});refreshOpenRouterFreeCatalog().catch(()=>{});setInterval(()=>{reconcileProviderJobs(DATA);maintainProviderState();},30000).unref();setInterval(()=>verifyProviders(DATA).catch(()=>{}),15*60*1000).unref();setInterval(()=>refreshOpenRouterFreeCatalog().catch(()=>{}),30*60*1000).unref();
 setInterval(()=>{if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});},60000).unref();
 setImmediate(()=>{kick();if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});});
