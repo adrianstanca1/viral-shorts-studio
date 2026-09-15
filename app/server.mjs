@@ -25,6 +25,7 @@ import { verifyOwnerPassword, createOwnerRecovery, ownerRecoveryStatus, complete
 import { recoveryPage, recoveryCookie, setRecoveryCookie, clearRecoveryCookie } from './owner-recovery-page.mjs';
 import { imageKinds, listCreatorAssets, createImageBrief, createCharacter, getCharacter } from './creator-assets.mjs';
 import { readBrandBrain, saveBrandBrain, brandPrompt } from './brand-brain.mjs';
+import { runResearch, listResearch, researchPrompt } from './research-studio.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -130,6 +131,8 @@ app.post('/api/characters',(req,res)=>{try{res.status(201).json(createCharacter(
 app.get('/api/characters/:id',(req,res)=>{const x=getCharacter(DATA,req.params.id);return x?res.json(x):res.status(404).json({error:'not found'})});
 app.get('/api/brand-brain',(req,res)=>res.json(readBrandBrain(DATA)));
 app.put('/api/brand-brain',(req,res)=>{try{res.json(saveBrandBrain(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/research',(req,res)=>res.json({reports:listResearch(DATA).slice(0,30)}));
+app.post('/api/research',async(req,res)=>{try{const report=await runResearch(DATA,req.body||{});res.status(201).json({...report,videoPrompt:researchPrompt(report)})}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/openrouter/free-models',(req,res)=>res.json(readOpenRouterFreeCatalog()));
 app.get('/api/provider-worker/status',(req,res)=>{const f=path.join(DATA,'provider-worker-status.json');if(!fs.existsSync(f))return res.json({state:'offline'});try{res.json(JSON.parse(fs.readFileSync(f,'utf8')))}catch{res.json({state:'invalid'})}});
 app.get('/api/provider-verification',(req,res)=>res.json({state:readVerification(DATA),worker:providerWorkerInventory(DATA)}));
