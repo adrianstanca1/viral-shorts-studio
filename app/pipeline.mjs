@@ -50,6 +50,7 @@ export function captionStyleForAspect(style='bold',aspect='9:16'){const base=cap
 const captionFilter=(file,style='bold',aspect='9:16')=>`subtitles=${file}:force_style='${captionStyleForAspect(style,aspect)}'`;
 function overlayFilter(file,aspect='9:16'){const land=aspect==='16:9',square=aspect==='1:1',size=land?34:square?40:46,y=land?'h*0.70-text_h/2':square?'h*0.68-text_h/2':'h*0.64-text_h/2';return `drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${file}:fontcolor=white:fontsize=${size}:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=${y}`;}
 export function dimensionsForAspect(aspect='9:16'){return aspect==='16:9'?{width:1280,height:720}:aspect==='1:1'?{width:720,height:720}:{width:720,height:1280}}
+export function renderProfile(env=process.env){const threads=Math.max(1,Math.min(8,Number(env.RENDER_THREADS||4)));return {fps:Math.max(24,Math.min(60,Number(env.VIDEO_FPS||25))),threads,intermediatePreset:String(env.VIDEO_INTERMEDIATE_PRESET||'ultrafast'),intermediateCrf:Math.max(14,Math.min(28,Number(env.VIDEO_INTERMEDIATE_CRF||18))),scenePreset:String(env.VIDEO_PRESET||'veryfast'),sceneCrf:Math.max(16,Math.min(28,Number(env.VIDEO_CRF||20))),audioBitrate:String(env.VIDEO_AUDIO_BITRATE||'160k')};}
 export function aspectMatches(width,height,aspect='9:16'){const d=dimensionsForAspect(aspect);return Math.abs((Number(width)||0)/(Number(height)||1)-d.width/d.height)<0.02}
 export function captionWordsForStyle(style='bold'){return style==='minimal'?7:style==='documentary'?5:4;}
 
@@ -304,16 +305,17 @@ async function makeNarration(text,outWav,targetDuration,{language='en',voice='au
 
 async function makeImageClip(image,out,duration,zoomIn=true,aspect='9:16'){
   const {width,height}=dimensionsForAspect(aspect);
-  const frames=Math.max(75,Math.round(duration*25));
+  const profile=renderProfile(),frames=Math.max(profile.fps*3,Math.round(duration*profile.fps));
   const z=zoomIn?`min(zoom+0.0008,1.12)`:`if(lte(zoom,1.0),1.12,max(1.0,zoom-0.0008))`;
-  const vf=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=25,fade=t=in:st=0:d=0.18,fade=t=out:st=${Math.max(0.2,duration-0.18)}:d=0.18,format=yuv420p`;
-  await run('ffmpeg',['-y','-loop','1','-i',image,'-vf',vf,'-t',String(duration),'-r','25','-an','-c:v','libx264','-threads','2','-preset','veryfast','-crf','24',out]);
+  const vf=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=${profile.fps},fade=t=in:st=0:d=0.18,fade=t=out:st=${Math.max(0.2,duration-0.18)}:d=0.18,format=yuv420p`;
+  await run('ffmpeg',['-y','-loop','1','-i',image,'-vf',vf,'-t',String(duration),'-r',String(profile.fps),'-an','-c:v','libx264','-threads',String(profile.threads),'-preset',profile.intermediatePreset,'-crf',String(profile.intermediateCrf),out]);
 }
 
 async function makeVideoClip(video,out,duration,aspect='9:16'){
   const {width,height}=dimensionsForAspect(aspect);
-  const vf=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},fps=25,fade=t=in:st=0:d=0.15,fade=t=out:st=${Math.max(0.2,duration-0.15)}:d=0.15,format=yuv420p`;
-  await run('ffmpeg',['-y','-stream_loop','-1','-i',video,'-vf',vf,'-t',String(duration),'-an','-c:v','libx264','-threads','2','-preset','veryfast','-crf','24',out]);
+  const profile=renderProfile();
+  const vf=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},fps=${profile.fps},fade=t=in:st=0:d=0.15,fade=t=out:st=${Math.max(0.2,duration-0.15)}:d=0.15,format=yuv420p`;
+  await run('ffmpeg',['-y','-stream_loop','-1','-i',video,'-vf',vf,'-t',String(duration),'-an','-c:v','libx264','-threads',String(profile.threads),'-preset',profile.intermediatePreset,'-crf',String(profile.intermediateCrf),out]);
 }
 
 function wrapOverlay(s,max=28){
@@ -371,7 +373,8 @@ async function makeAiImportedScene(scene,sceneDir,ai,sharedNarration=null){
   const out=path.join(sceneDir,'scene.mp4');
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
   const draw=overlayFilter(overlayFile,scene.aspect);
-  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-t',String(duration),out]);
+  const profile=renderProfile();
+  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-t',String(duration),out]);
   const promptTokens=tokens(ai.prompt||''), wanted=tokens(scene.visualPrompt||scene.searchQuery||''); let overlap=0;for(const t of wanted)if(promptTokens.has(t))overlap++;
   const providerBonus=ai.provider==='higgsfield'?10:ai.provider==='nvidia'?8:6, motion=ai.kind==='video'?12:5;
   return {...scene,duration:Number(duration.toFixed(2)),captions:srt,assets:[{title:`AI ${ai.kind} candidate`,source:ai.url,license:'provider-generated',artist:ai.provider,type:`ai-${ai.kind}`,provider:ai.provider,jobId:ai.id}],file:out,hasRealVideo:ai.kind==='video',visualType:`ai-${ai.kind}`,aiProvider:ai.provider,aiJobId:ai.id,narrationReused:!!sharedNarration,candidateScore:Math.round(clamp(62+providerBonus+motion+Math.min(12,overlap*2),0,100))};
@@ -417,10 +420,8 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   if(scene.style==='whiteboard') return makeWhiteboardScene(scene,sceneDir,fallbackQuery,sharedNarration);
   const poolStart=Math.max(0,((scene.index-1)*2 + variant*3) % Math.max(1,mediaPool.length));
   const candidates=[...mediaPool.slice(poolStart,poolStart+4)];
-  for(const query of mediaSearchQueries(scene,fallbackQuery)){
-    if(candidates.length>=12)break;
-    candidates.push(...await commonsImages(`${query}${variant?` variation ${variant}`:''}`,8).catch(()=>[]));
-  }
+  const queries=mediaSearchQueries(scene,fallbackQuery).slice(0,3);
+  if(candidates.length<12){const batches=await Promise.all(queries.map(query=>commonsImages(`${query}${variant?` variation ${variant}`:''}`,8).catch(()=>[])));for(const batch of batches)candidates.push(...batch);}
   const avoid=new Set((scene.avoidAssetKeys||[]).map(x=>String(x)));
   let unique=[...new Map(candidates.filter(x=>x?.url).map(x=>[x.url,x])).values()].sort((a,b)=>relevanceScore(b,scene)-relevanceScore(a,scene));
   let novel=unique.filter(x=>!avoid.has(assetKey(x))),avoided=unique.filter(x=>avoid.has(assetKey(x)));
@@ -473,7 +474,8 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   const out=path.join(sceneDir,'scene.mp4');
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
   const draw=overlayFilter(overlayFile,scene.aspect);
-  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-t',String(duration),out]);
+  const profile=renderProfile();
+  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-t',String(duration),out]);
   const assets=downloaded.map(({local,...a})=>({...a,file:path.basename(local)}));
   if(motionVideo){const {local,...v}=motionVideo;assets.unshift({...v,file:'remote-stream'});}
   return {...scene,duration:Number(duration.toFixed(2)),assets,file:out,captions:srt,hasRealVideo:!!motionVideo,visualType:motionVideo?'archive-video':'archive-motion',narrationReused:!!sharedNarration};
@@ -630,7 +632,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     if(Math.abs(assembledDuration-targetDuration)>.08){
       const args=['-y','-i',assembled];
       if(assembledDuration<targetDuration){const pad=Math.max(.05,targetDuration-assembledDuration);args.push('-vf',`tpad=stop_mode=clone:stop_duration=${pad.toFixed(3)}`,'-af',`apad=pad_dur=${pad.toFixed(3)}`);}
-      args.push('-t',String(targetDuration),'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-movflags','+faststart',final);
+      const profile=renderProfile();args.push('-t',String(targetDuration),'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-movflags','+faststart',final);
       await run('ffmpeg',args);
     }else fs.renameSync(assembled,final);
     try{fs.rmSync(assembled,{force:true});}catch{}
@@ -641,7 +643,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const actualDuration=Number(probe.format?.duration||0),durationDelta=Number((actualDuration-Number(project.duration)).toFixed(2));
     const aspectOk=!!videoStream&&aspectMatches(videoStream.width,videoStream.height,project.aspect||'9:16'),vertical=!!videoStream&&Number(videoStream.height)>Number(videoStream.width),audio=!!audioStream;
     if(!videoStream||!aspectOk||!audio||!Number.isFinite(actualDuration)||actualDuration<=0)throw new Error(`Final media QA failed: valid ${project.aspect||'9:16'} video with audio was not produced`);
-    const mediaQa={width:Number(videoStream.width||0),height:Number(videoStream.height||0),videoCodec:videoStream.codec_name||null,audioCodec:audioStream.codec_name||null,fileBytes:fs.statSync(final).size};
+    const mediaQa={width:Number(videoStream.width||0),height:Number(videoStream.height||0),videoCodec:videoStream.codec_name||null,audioCodec:audioStream.codec_name||null,fileBytes:fs.statSync(final).size,bitrate:Number(probe.format?.bit_rate||0),renderProfile:renderProfile()};
     const realVideoScenes=scenes.filter(s=>s.hasRealVideo).length;
     const visualMix=scenes.reduce((m,s)=>{const k=s.visualType||'unknown';m[k]=(m[k]||0)+1;return m;},{});
     const candidateScenes=Object.values(project.sceneVariants||{}).filter(v=>Array.isArray(v)&&v.some(x=>x.autoGenerated)).length;
