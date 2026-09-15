@@ -11,9 +11,9 @@
 - [x] Track accepted/rejected recommendations for learning.
 
 ## V4.3 Collaboration
-- [ ] Workspace member model with owner/editor/reviewer roles.
-- [ ] Scoped invitations and revocation without weakening owner authentication.
-- [ ] Audit log for content, approval and publishing mutations.
+- [x] Workspace member model with owner/editor/reviewer roles.
+- [x] Scoped invitations and revocation without weakening owner authentication.
+- [x] Audit log for content, approval and publishing mutations.
 
 ## V4.4 Plugin Marketplace
 - [ ] Persistent integration/plugin registry layered over MCP tools.
