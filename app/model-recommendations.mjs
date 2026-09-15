@@ -1,0 +1,5 @@
+export const imageModelRecommendations=()=>[
+  {id:'black-forest-labs/FLUX.1-schnell',task:'text-to-image',library:'diffusers',license:'apache-2.0',gated:true,parametersBillions:11.9,recommendation:'cloud-only-after-free-verification',localCpuFit:false,reason:'Strong image model, but gated and far too large for the current 1 GB provider worker / CPU-only local path.'},
+  {id:'stabilityai/sdxl-turbo',task:'text-to-image',library:'diffusers',license:'other',gated:false,parametersBillions:2.57,recommendation:'evaluate-provider-route',localCpuFit:false,reason:'Smaller than FLUX but still not suitable for the current 1 GB provider worker; provider availability and zero-cost allowance must be verified before use.'}
+];
+export function modelRecommendationPolicy(){return {source:'Hugging Face Hub metadata reviewed 2026-09-15',automaticEnable:false,paidFallback:false,requirements:['authenticated route','fresh zero-cost evidence','positive remaining allowance','provider smoke verification'],models:imageModelRecommendations()}}

@@ -22,7 +22,7 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 - [x] Make Image Maker provider jobs first-class assets rather than pseudo-projects.
 - [x] Persist provider result files/URLs into creator-assets records.
 - [ ] Add verified-free image and video provider capability registry.
-- [ ] Add local/verified-free model recommendations discovered through Hugging Face.
+- [x] Add local/verified-free model recommendations discovered through Hugging Face.
 - [ ] Add safe provider smoke tests before enabling a route.
 
 ## Phase 4 — Product and Website Exports

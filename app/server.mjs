@@ -31,6 +31,7 @@ import { listSites, getSite, createSite } from './website-studio.mjs';
 import { creatorTools, planCreatorGoal } from './creator-agent.mjs';
 import { listRuns, createRun, updateRun, syncRunWithProjects } from './creator-runs.mjs';
 import { buildCreatorAnalytics, recordAnalyticsSnapshot, readAnalytics, listExperiments, createExperiment, updateExperiment } from './creator-analytics.mjs';
+import { modelRecommendationPolicy } from './model-recommendations.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -99,6 +100,7 @@ async function maybeAutoCloudPlan(id){
 
 app.get('/api/health',(req,res)=>res.json({status:'ok',service:'viral-shorts-studio',mode:'autonomous-production',niches}));
 app.get('/api/providers',async(req,res)=>res.json({...providerInventory(),media:mediaProviderStatus(),generative:generativeStatus(),text:await textProviderStatus(),providerJobs:providerJobStatus(DATA),workerProviders:providerWorkerInventory(DATA),freeProviderRouting:freeProviderSummary(DATA)}));
+app.get('/api/model-recommendations',(req,res)=>res.json(modelRecommendationPolicy()));
 function statsSnapshot(all=list()){
   const completed=all.filter(x=>x.status==='complete'),failed=all.filter(x=>x.status==='failed');
   const timed=a=>a.filter(x=>Number(x.metrics?.totalSeconds)>0),avg=a=>{const t=timed(a);return t.length?Number((t.reduce((n,x)=>n+Number(x.metrics.totalSeconds),0)/t.length).toFixed(2)):0;};
