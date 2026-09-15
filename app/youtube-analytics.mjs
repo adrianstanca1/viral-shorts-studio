@@ -30,3 +30,10 @@ export async function fetchYouTubeAnalytics({days=28,env=process.env}={}){
   const weightedAverageViewDuration=totals.views?Number((rows.reduce((n,x)=>n+Number(x.averageViewDuration||0)*Number(x.views||0),0)/totals.views).toFixed(1)):0;
   return {provider:'youtube-analytics',readOnly:true,startDate,endDate,days:rows.length,totals:{...totals,averageViewDuration:weightedAverageViewDuration},rows,generatedAt:new Date().toISOString()};
 }
+
+
+export async function fetchYouTubeVideoAnalytics({videoId,days=28,env=process.env}={}){
+  if(!videoId)throw new Error('videoId is required');const token=await refreshAccessToken(env),{startDate,endDate}=analyticsWindow(days);
+  const q=new URLSearchParams({ids:'channel==MINE',startDate,endDate,metrics:'views,estimatedMinutesWatched,averageViewDuration,likes,comments,shares,subscribersGained',filters:`video==${videoId}`});
+  const r=await fetch(`${REPORTS_URL}?${q}`,{headers:{authorization:`Bearer ${token}`},signal:AbortSignal.timeout(30000)});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`YouTube video analytics failed (${r.status})`);const row=data.rows?.[0]||[],headers=(data.columnHeaders||[]).map(x=>x.name),m=Object.fromEntries(headers.map((h,i)=>[h,row[i]??0]));return {provider:'youtube-analytics',videoId,startDate,endDate,metrics:{views:Number(m.views||0),watchMinutes:Number(m.estimatedMinutesWatched||0),averageViewDuration:Number(m.averageViewDuration||0),likes:Number(m.likes||0),comments:Number(m.comments||0),shares:Number(m.shares||0),subscribersGained:Number(m.subscribersGained||0)},generatedAt:new Date().toISOString()};
+}
