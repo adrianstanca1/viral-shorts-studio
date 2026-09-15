@@ -1,0 +1,12 @@
+import { withProvenance } from './recommendation-provenance.mjs';
+const pct=(a,b)=>b?Number((100*a/b).toFixed(1)):null;
+export function campaignLoopPlan(campaign,{projects=[],performance={top:[]},publishJobs=[],creative={recommendations:[]},learning={recommendations:[]}}={}){
+  const ids=new Set(campaign?.projectIds||[]),linked=projects.filter(p=>ids.has(p.id)),ready=linked.filter(p=>p.status==='complete'&&p.qa?.launchReady===true),approved=ready.filter(p=>p.publishApproval?.status==='approved');
+  const published=publishJobs.filter(j=>ids.has(j.projectId)&&j.status==='published'),scheduled=publishJobs.filter(j=>ids.has(j.projectId)&&j.status==='scheduled');
+  const target=campaign?.kpis||{},actualViews=(performance.top||[]).filter(x=>ids.has(x.projectId)).reduce((n,x)=>n+Number(x.views||0),0);
+  const actions=[];
+  if(approved.length&&!scheduled.length)actions.push(withProvenance({type:'schedule-approved',priority:90,projectIds:approved.slice(0,3).map(x=>x.id),message:'Schedule approved launch-ready campaign projects; do not publish automatically.'},{sources:approved.slice(0,3).map(p=>({type:'internal-qa',id:p.id,label:p.topic,evidence:{launchReady:true,approval:p.publishApproval?.status}}))}));
+  if(target.views&&actualViews<target.views)actions.push(withProvenance({type:'produce-follow-up',priority:75,message:`Campaign has reached ${pct(actualViews,target.views)||0}% of its observed view target; prepare the next owner-reviewed production.`},{sources:[{type:'observed-performance',id:campaign.id,label:campaign.name,observed:true,evidence:{views:actualViews,targetViews:Number(target.views)}}]}));
+  if(published.length&&(creative.recommendations||[])[0])actions.push(withProvenance({type:'apply-creative-learning',priority:70,message:creative.recommendations[0].message},{sources:[{type:'observed-performance',id:campaign.id,label:'campaign performance',observed:true,evidence:{published:published.length}},{type:'observed-creative',id:'creative-intelligence',label:'creative pattern',observed:true,evidence:creative.recommendations[0].evidence||null}]}));
+  return {campaignId:campaign?.id||null,generatedAt:new Date().toISOString(),state:{linked:linked.length,ready:ready.length,approved:approved.length,scheduled:scheduled.length,published:published.length,observedViews:actualViews},actions:actions.sort((a,b)=>b.priority-a.priority),policy:{autoPublish:false,ownerApprovalRequired:true,freeOnly:true}};
+}
