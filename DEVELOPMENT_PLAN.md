@@ -38,11 +38,11 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 - [ ] Add YouTube analytics only after scopes and connector are explicitly configured.
 
 ## Phase 6 — Performance and Launch Hardening
-- [ ] Benchmark short, 5 min and 20 min projects without blocking live work.
+- [x] Benchmark short, 5 min and 20 min projects without blocking live work.
 - [x] Add chapter-level checkpoints for long-form projects.
-- [ ] Profile FFmpeg/CPU/memory bottlenecks and tune concurrency.
-- [ ] Verify exact GitHub CI status for release commits.
-- [ ] Run public-domain, auth, recovery, approval and publish-gate smoke tests.
+- [x] Profile FFmpeg/CPU/memory bottlenecks and tune concurrency.
+- [x] Verify exact GitHub CI status for release commits.
+- [x] Run public-domain, auth, recovery, approval and publish-gate smoke tests.
 
 ## Development Rules
 1. Inspect Git status/worktrees/stashes before every change.
