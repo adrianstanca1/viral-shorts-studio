@@ -52,7 +52,10 @@ app.use(express.static(new URL('./public', import.meta.url).pathname));
 const PORT = Number(process.env.PORT || 3010);
 const REQUIRE_PUBLISH_APPROVAL=!['0','false','no','off'].includes(String(process.env.REQUIRE_APPROVAL_BEFORE_PUBLISH??'true').toLowerCase());
 const niches = ['true-crime','history','storytelling','fact-check'];
-const styles = ['documentary','cinematic','hybrid','whiteboard'];
+const styles = ['documentary','cinematic','hybrid','whiteboard','animated','motivational','finance','history-ancient','space-sci-fi'];
+const videoModes=['multi-scene','single-scene','whiteboard'];
+const languages=['en','fr','es','it','de'];
+const aspects=['9:16','16:9','1:1'];
 const jobs = new Map();
 const enabledFlag=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 let active=false;
@@ -71,7 +74,7 @@ function writeJsonAtomic(file,value){const tmp=`${file}.${process.pid}.tmp`;fs.w
 function save(job){ if(job.status==='complete')ensurePublishApproval(job,{required:REQUIRE_PUBLISH_APPROVAL}); fs.mkdirSync(projectDir(job.id),{recursive:true}); writeJsonAtomic(projectFile(job.id),job); jobs.set(job.id,job); if(job.status==='complete'&&enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))setImmediate(()=>maybeAutoCloudPlan(job.id)); }
 function load(id){ if(jobs.has(id)) return jobs.get(id); const p=projectFile(id); if(!fs.existsSync(p)) return null; const j=JSON.parse(fs.readFileSync(p,'utf8')); const hadApproval=!!j.publishApproval?.status;if(j.status==='complete')ensurePublishApproval(j,{required:REQUIRE_PUBLISH_APPROVAL});if(!hadApproval&&j.publishApproval?.status)writeJsonAtomic(p,j);jobs.set(id,j); return j; }
 function list(){ const d=path.join(DATA,'projects'); fs.mkdirSync(d,{recursive:true}); return fs.readdirSync(d).map(id=>load(id)).filter(Boolean).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }
-function projectSummary(j){ const variants=Object.values(j.sceneVariants||{}).reduce((n,v)=>n+(Array.isArray(v)?v.length:0),0),publishJobs=listPublishJobs(DATA,{projectId:j.id}); return {id:j.id,topic:j.topic,niche:j.niche,style:j.style||'documentary',duration:j.duration,status:j.status,progress:Number(j.progress||0),createdAt:j.createdAt,completedAt:j.completedAt||null,error:j.error?String(j.error).slice(0,240):null,failedStage:j.failedStage||null,retryCount:Number(j.retryCount||0),recoverability:j.status==='failed'?classifyRecoverability(j):null,publishApproval:j.publishApproval||null,launchReady:j.qa?.launchReady===true,sceneCount:j.scenes?.length||0,variantCount:variants,score:j.qa?.viralityScore??null,actualDuration:j.render?.actualDuration??null,hasVideo:!!j.render?.file,publishJobs:publishJobs.length}; }
+function projectSummary(j){ const variants=Object.values(j.sceneVariants||{}).reduce((n,v)=>n+(Array.isArray(v)?v.length:0),0),publishJobs=listPublishJobs(DATA,{projectId:j.id}); return {id:j.id,topic:j.topic,niche:j.niche,style:j.style||'documentary',mode:j.mode||'multi-scene',language:j.language||'en',aspect:j.aspect||'9:16',duration:j.duration,status:j.status,progress:Number(j.progress||0),createdAt:j.createdAt,completedAt:j.completedAt||null,error:j.error?String(j.error).slice(0,240):null,failedStage:j.failedStage||null,retryCount:Number(j.retryCount||0),recoverability:j.status==='failed'?classifyRecoverability(j):null,publishApproval:j.publishApproval||null,launchReady:j.qa?.launchReady===true,sceneCount:j.scenes?.length||0,variantCount:variants,score:j.qa?.viralityScore??null,actualDuration:j.render?.actualDuration??null,hasVideo:!!j.render?.file,publishJobs:publishJobs.length}; }
 
 async function maybeAutoCloudPlan(id){
   const j=load(id);if(!j||j.status!=='complete'||!j.render?.file||!fs.existsSync(j.render.file))return;
@@ -108,7 +111,8 @@ app.get('/api/dashboard',async(req,res)=>{try{const all=list(),providerSnapshot=
 app.get('/api/capabilities',(req,res)=>res.json({
   niches,
   stages:['research','source-check','hook','script','storyboard','shot-direction','visual-prompts','archive-candidates','whiteboard-candidates','verified-free-ai-candidates','free-allowance-planning','provider-job-harvesting','candidate-scoring','auto-selection','motion-clips','voice','captions','render','credits','qa','approval','distribution-package','publish-queue'],
-  formats:['9:16','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes','2–20 min long-form / adaptive scenes'],
+  formats:['9:16','16:9','1:1','30s / 8 scenes','60s / 14 scenes','90s / 20 scenes','2–20 min long-form / adaptive scenes'],
+  videoModes, languages, aspects,
   styles,
   currentProviders:['Wikipedia research','Wikimedia Commons licensed imagery','FFmpeg motion-video','FFmpeg Flite narration'],
   optionalProviders:['Pexels','Pixabay','OpenRouter','Tavily','fal.ai','future image-to-video adapters'],
@@ -166,8 +170,12 @@ app.post('/api/projects',(req,res)=>{
   const duration=Number(body.duration||60);
   if(!Number.isFinite(duration)||duration<30||duration>1200)return res.status(400).json({error:'Choose a duration from 30 seconds to 20 minutes'});
   const niche=niches.includes(body.niche)?body.niche:'storytelling';
-  const style=styles.includes(body.style)?body.style:'documentary';
-  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,topic,duration,autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
+  const requestedMode=videoModes.includes(body.mode)?body.mode:'multi-scene';
+  const mode=body.style==='whiteboard'?'whiteboard':requestedMode;
+  const style=mode==='whiteboard'?'whiteboard':styles.includes(body.style)?body.style:'documentary';
+  const language=languages.includes(body.language)?body.language:'en';
+  const aspect=aspects.includes(body.aspect)?body.aspect:'9:16';
+  const job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche,style,mode,language,aspect,topic,duration,autonomous:true,autoCandidates:body.autoCandidates!==false,candidateCount:Math.max(1,Math.min(4,Number(body.candidateCount||3)))};
   save(job); res.status(202).json(job);
   setImmediate(kick);
 });

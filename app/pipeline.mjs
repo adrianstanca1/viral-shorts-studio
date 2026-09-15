@@ -155,14 +155,15 @@ export async function researchTopic(topic){
   return rankSources(topic,sources).slice(0,8);
 }
 
-export function sceneCountForDuration(duration=60){
+export function sceneCountForDuration(duration=60,mode='multi-scene'){
   const seconds=Math.max(15,Number(duration||60));
+  if(mode==='single-scene')return 1;
   if(seconds<=30)return 8; if(seconds<=60)return 14; if(seconds<=90)return 20;
   return Math.max(20,Math.min(180,Math.ceil(seconds/7.5)));
 }
 
-export function buildStoryboard({topic,niche,duration,sources,style='documentary'}){
-  const targetScenes=sceneCountForDuration(duration);
+export function buildStoryboard({topic,niche,duration,sources,style='documentary',mode='multi-scene',language='en',aspect='9:16'}){
+  const targetScenes=sceneCountForDuration(duration,mode);
   const rankedFacts=rankFacts(topic,sources);
   const narrativeFacts=selectNarrativeFacts(topic,sources,Math.max(targetScenes+2,8));
   const hookByNiche={
@@ -173,6 +174,7 @@ export function buildStoryboard({topic,niche,duration,sources,style='documentary
   };
   const hook=hookByNiche[niche]||hookByNiche.storytelling;
   const beat=i=>{
+    if(targetScenes===1)return 'payoff';
     if(i===0)return 'hook'; if(i===targetScenes-1)return 'payoff';
     const r=i/(targetScenes-1); if(r<.2)return 'setup'; if(r<.45)return 'context'; if(r<.7)return 'evidence'; return 'escalation';
   };
@@ -189,17 +191,17 @@ export function buildStoryboard({topic,niche,duration,sources,style='documentary
     if(fact?.text)used.add(fact.text);
     body.push(fact||{text:`${topic} is documented in the cited sources.`,sourceIndex:0});
   }
-  const chosen=[{text:hook,sourceIndex:null},...body,{text:payoffFact?.text||`The cited evidence shows why ${topic} still matters.`,sourceIndex:payoffFact?.sourceIndex??null}];
+  const chosen=targetScenes===1?[{text:payoffFact?.text||hook,sourceIndex:payoffFact?.sourceIndex??null}]:[{text:hook,sourceIndex:null},...body,{text:payoffFact?.text||`The cited evidence shows why ${topic} still matters.`,sourceIndex:payoffFact?.sourceIndex??null}];
   const shotByBeat={hook:'dramatic close-up',setup:'establishing wide shot',context:'archival detail',evidence:'evidence or document detail',escalation:'dynamic contextual shot',payoff:'memorable closing image'};
   return chosen.slice(0,targetScenes).map((item,i)=>{
     const narration=item.text,beatName=beat(i),shotType=shotByBeat[beatName];
     const clean=narration.split(/\s+/).slice(0,22).join(' ');
     return {
-      index:i+1,beat:beatName,shotType,style,
+      index:i+1,beat:beatName,shotType,style,mode,language,aspect,
       narration:clean,
       overlay:(i===0?hook:narration).replace(/\s+/g,' ').slice(0,95),
       searchQuery:`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`,
-      visualPrompt:style==='whiteboard'?`Clean whiteboard marker illustration explaining ${topic}; simple dark ink strokes on white background, educational diagram feel, no watermark. Scene fact: ${clean}`:`Vertical ${style==='cinematic'?'cinematic':'documentary'} ${shotType} about ${topic}. Historically/contextually accurate, ${style} style, no visible text, 9:16 composition. Scene fact: ${clean}`,
+      visualPrompt:style==='whiteboard'?`Clean whiteboard marker illustration explaining ${topic}; simple dark ink strokes on white background, educational diagram feel, no watermark. Scene fact: ${clean}`:`${aspect==='16:9'?'Landscape':aspect==='1:1'?'Square':'Vertical'} ${style} ${shotType} about ${topic}. Historically/contextually accurate, no visible text, ${aspect} composition. Scene fact: ${clean}`,
       motionPrompt:style==='whiteboard'?'progressive hand-drawn ink reveal with readable hold':(i%3===0?'slow cinematic push-in with subtle parallax':i%3===1?'controlled lateral pan with restrained documentary motion':'slow pull-back revealing contextual detail'),
       camera:i%3===0?'slow push in':i%3===1?'gentle pan':'slow zoom out',
       durationHint:Number((Number(duration||60)/targetScenes).toFixed(2)),
@@ -498,7 +500,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     });
     const mediaPool=mediaCached.value.images||[], videoPool=mediaCached.value.videos||[];
     stageMetric(metrics,'mediaDiscoverySeconds',mediaStarted);
-    const generationPlan={version:2,aspect:'9:16',duration:Number(project.duration),style:project.style||'documentary',freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
+    const generationPlan={version:3,aspect:project.aspect||'9:16',language:project.language||'en',mode:project.mode||'multi-scene',duration:Number(project.duration),style:project.style||'documentary',freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
     saveJson(path.join(dir,'generation-prompts.json'),generationPlan);
     project.generationPlan=generationPlan;
     const generativeQueue=writeGenerationQueue(project,dir);
