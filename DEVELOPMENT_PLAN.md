@@ -6,7 +6,7 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 ## Phase 1 — Correctness and Production Safety
 - [x] Fix renderer aspect support for 9:16, 16:9 and 1:1 end-to-end.
 - [x] Make final media QA aspect-aware instead of vertical-only.
-- [ ] Keep captions/overlays inside aspect-safe zones.
+- [x] Keep captions/overlays inside aspect-safe zones.
 - [x] Preserve approval gates, free-only routing, recovery and scene reuse.
 - [x] Add regression tests for aspect/dimension selection.
 

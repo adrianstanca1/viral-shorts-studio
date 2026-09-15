@@ -45,8 +45,10 @@ export function writePhraseCaptions(file,text,duration,{wordsPerCue=4}={}){
   }
   fs.writeFileSync(file,cues.join('\n'));return file;
 }
-const captionStyles={bold:'FontName=DejaVu Sans,FontSize=20,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=3,Shadow=1,Alignment=2,MarginV=110',minimal:'FontName=DejaVu Sans,FontSize=18,Bold=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00202020,Outline=2,Shadow=0,Alignment=2,MarginV=90',documentary:'FontName=DejaVu Sans,FontSize=19,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=2,Shadow=1,Alignment=2,MarginV=95'};
-const captionFilter=(file,style='bold')=>`subtitles=${file}:force_style='${captionStyles[style]||captionStyles.bold}'`;
+const captionStyles={bold:{size:20,bold:1,outline:3,shadow:1},minimal:{size:18,bold:0,outline:2,shadow:0},documentary:{size:19,bold:1,outline:2,shadow:1}};
+export function captionStyleForAspect(style='bold',aspect='9:16'){const base=captionStyles[style]||captionStyles.bold,land=aspect==='16:9',square=aspect==='1:1',size=land?Math.max(14,base.size-3):square?Math.max(16,base.size-1):base.size,margin=land?44:square?70:style==='bold'?110:style==='minimal'?90:95;return `FontName=DejaVu Sans,FontSize=${size},Bold=${base.bold},PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=${base.outline},Shadow=${base.shadow},Alignment=2,MarginV=${margin}`;}
+const captionFilter=(file,style='bold',aspect='9:16')=>`subtitles=${file}:force_style='${captionStyleForAspect(style,aspect)}'`;
+function overlayFilter(file,aspect='9:16'){const land=aspect==='16:9',square=aspect==='1:1',size=land?34:square?40:46,y=land?'h*0.70-text_h/2':square?'h*0.68-text_h/2':'h*0.64-text_h/2';return `drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${file}:fontcolor=white:fontsize=${size}:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=${y}`;}
 export function dimensionsForAspect(aspect='9:16'){return aspect==='16:9'?{width:1280,height:720}:aspect==='1:1'?{width:720,height:720}:{width:720,height:1280}}
 export function aspectMatches(width,height,aspect='9:16'){const d=dimensionsForAspect(aspect);return Math.abs((Number(width)||0)/(Number(height)||1)-d.width/d.height)<0.02}
 export function captionWordsForStyle(style='bold'){return style==='minimal'?7:style==='documentary'?5:4;}
@@ -351,8 +353,8 @@ async function makeAiImportedScene(scene,sceneDir,ai,sharedNarration=null){
   const overlayFile=path.join(sceneDir,'overlay.txt');fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
-  const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.64-text_h/2`;
-  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-t',String(duration),out]);
+  const draw=overlayFilter(overlayFile,scene.aspect);
+  await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-c:a','aac','-b:a','128k','-t',String(duration),out]);
   const promptTokens=tokens(ai.prompt||''), wanted=tokens(scene.visualPrompt||scene.searchQuery||''); let overlap=0;for(const t of wanted)if(promptTokens.has(t))overlap++;
   const providerBonus=ai.provider==='higgsfield'?10:ai.provider==='nvidia'?8:6, motion=ai.kind==='video'?12:5;
   return {...scene,duration:Number(duration.toFixed(2)),captions:srt,assets:[{title:`AI ${ai.kind} candidate`,source:ai.url,license:'provider-generated',artist:ai.provider,type:`ai-${ai.kind}`,provider:ai.provider,jobId:ai.id}],file:out,hasRealVideo:ai.kind==='video',visualType:`ai-${ai.kind}`,aiProvider:ai.provider,aiJobId:ai.id,narrationReused:!!sharedNarration,candidateScore:Math.round(clamp(62+providerBonus+motion+Math.min(12,overlap*2),0,100))};
@@ -453,8 +455,8 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
-  const draw=`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${overlayFile}:fontcolor=white:fontsize=46:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h*0.64-text_h/2`;
-  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-t',String(duration),out]);
+  const draw=overlayFilter(overlayFile,scene.aspect);
+  await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-t',String(duration),out]);
   const assets=downloaded.map(({local,...a})=>({...a,file:path.basename(local)}));
   if(motionVideo){const {local,...v}=motionVideo;assets.unshift({...v,file:'remote-stream'});}
   return {...scene,duration:Number(duration.toFixed(2)),assets,file:out,captions:srt,hasRealVideo:!!motionVideo,visualType:motionVideo?'archive-video':'archive-motion',narrationReused:!!sharedNarration};
