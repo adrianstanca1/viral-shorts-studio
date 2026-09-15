@@ -40,6 +40,8 @@ import { clipPlan, ensureAspectVariant, ensureClip } from './repurpose-media.mjs
 import { recordProviderSmoke, providerSmokeSummary } from './provider-smoke.mjs';
 import { voiceCatalog, getVoice, setVoiceFavourite, voicePreviewText } from './voice-studio.mjs';
 import { ensureThumbnailVariants } from './thumbnail-lab.mjs';
+import { listCampaigns, getCampaign, createCampaign, updateCampaign, campaignMetrics, campaignSchedule } from './campaigns.mjs';
+import { growthQueue, refreshGrowthQueue, decideGrowthItem, acceptedBriefs } from './growth-autopilot.mjs';
 import { buildOpportunityScorecard, saveOpportunityScorecard, listOpportunityScorecards } from './opportunity-lab.mjs';
 import { listApiKeys, createApiKey, revokeApiKey, verifyApiKey } from './api-keys.mjs';
 import { mcpToolDefinitions, mcpError, mcpResult, mcpText } from './mcp-protocol.mjs';
@@ -151,6 +153,14 @@ app.post('/api/experiments',(req,res)=>{try{const projectId=String(req.body?.pro
 app.patch('/api/experiments/:id',(req,res)=>{try{res.json(updateExperiment(DATA,req.params.id,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/experiments/insights',(req,res)=>res.json(experimentInsights(DATA)));
 app.get('/api/analytics/opportunities',async(req,res)=>{const env=youtubeAnalyticsCredentialEnv(DATA),status=youtubeAnalyticsStatus(env);let youtube=null,error=null;if(status.enabled){try{youtube=await fetchYouTubeAnalytics({days:Number(req.query.days||28),env})}catch(e){error=String(e.message||e).slice(0,240)}}res.json({...scoreContentOpportunities(list(),youtube,experimentInsights(DATA)),youtubeAnalytics:{status,error}})});
+app.get('/api/growth/queue',(req,res)=>res.json({...growthQueue(DATA),acceptedBriefs:acceptedBriefs(DATA)}));
+app.post('/api/growth/refresh',(req,res)=>{const analytics=buildCreatorAnalytics(list(),listPublishJobs(DATA,{})),scored=scoreContentOpportunities(list(),null,experimentInsights(DATA));res.json(refreshGrowthQueue(DATA,{analytics,opportunities:scored.opportunities||[],experiments:experimentInsights(DATA)}))});
+app.post('/api/growth/items/:id/decision',(req,res)=>{try{res.json(decideGrowthItem(DATA,req.params.id,String(req.body?.decision||''),req.body?.note))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/campaigns',(req,res)=>res.json({campaigns:listCampaigns(DATA).map(c=>({...c,metrics:campaignMetrics(c,list())}))}));
+app.post('/api/campaigns',(req,res)=>{try{res.status(201).json(createCampaign(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/campaigns/:id',(req,res)=>{const c=getCampaign(DATA,req.params.id);if(!c)return res.status(404).json({error:'campaign not found'});res.json({...c,metrics:campaignMetrics(c,list())})});
+app.patch('/api/campaigns/:id',(req,res)=>{try{const projectIds=Array.isArray(req.body?.projectIds)?req.body.projectIds:null;if(projectIds&&projectIds.some(id=>!load(String(id))))return res.status(404).json({error:'one or more projects were not found'});res.json(updateCampaign(DATA,req.params.id,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/campaigns/:id/schedule',(req,res)=>{const c=getCampaign(DATA,req.params.id);if(!c)return res.status(404).json({error:'campaign not found'});res.json(campaignSchedule(c,publishingCalendar(DATA,{days:Number(req.query.days||30)}),{slots:Number(req.query.slots||5)}))});
 app.get('/api/dashboard',async(req,res)=>{try{const all=list(),providerSnapshot=providerJobsSnapshot(DATA),diagnostics=await diagnosticsSnapshot(all,providerSnapshot);res.json({health:{status:'ok',service:'viral-shorts-studio',mode:'autonomous-production'},projects:all.map(projectSummary),stats:statsSnapshot(all),providerJobs:{counts:providerSnapshot.counts,total:providerSnapshot.total,providers:providerSnapshot.providers,jobs:providerSnapshot.jobs.slice(0,100)},publishQueue:publishQueueSummary(DATA),publishingConnectors:{google:googleOAuthStatus(DATA),youtube:youtubePublisherStatus(youtubeCredentialEnv(DATA)),youtubeAnalytics:youtubeAnalyticsStatus(youtubeAnalyticsCredentialEnv(DATA))},providerVerification:{state:readVerification(DATA),worker:providerWorkerInventory(DATA)},diagnostics})}catch{res.status(500).json({error:'dashboard unavailable'})}});
 app.get('/api/voices',(req,res)=>res.json({voices:voiceCatalog(DATA),engine:'flite',policy:{localFirst:true,freeOnly:true}}));
 app.post('/api/voices/:id/favourite',(req,res)=>{try{res.json(setVoiceFavourite(DATA,req.params.id,req.body?.favourite!==false))}catch(e){res.status(404).json({error:String(e.message||e)})}});
