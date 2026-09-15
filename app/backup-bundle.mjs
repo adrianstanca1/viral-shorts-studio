@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export const safeStateFiles=['brand-brain.json','creator-assets.json','creator-runs.json','creator-analytics.json','creator-experiments.json','research-studio.json','opportunity-lab.json','product-studio.json','website-studio.json','campaigns.json','growth-queue.json','publish-jobs.json','plugin-registry-state.json','capacity-benchmark.json','platform-performance.json','agent-handoffs.json','agent-marketplace.json'];
+export const safeStateFiles=['brand-brain.json','creator-assets.json','creator-runs.json','creator-analytics.json','creator-experiments.json','research-studio.json','opportunity-lab.json','product-studio.json','website-studio.json','campaigns.json','growth-queue.json','publish-jobs.json','plugin-registry-state.json','capacity-benchmark.json','platform-performance.json','creative-memory.json','campaign-learning.json','agent-handoffs.json','agent-marketplace.json'];
 const forbidden=new Set(['google-oauth.json','owner-auth.json','integration-keys.json','workspace-members.json','owner-recovery.json']);
 const cloneJson=file=>JSON.parse(fs.readFileSync(file,'utf8'));
 const atomicJson=(file,value)=>{fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.restore.tmp';fs.writeFileSync(tmp,JSON.stringify(value,null,2),{mode:0o600});fs.renameSync(tmp,file)};
