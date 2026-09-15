@@ -10,3 +10,8 @@ export function experimentLifecycleRecommendations(projects=[],experiments=[],pe
   for(const p of projects.filter(x=>x.status==='complete'&&x.qa?.launchReady===true)){const observed=perf.get(p.id);for(const type of ['title','thumbnail']){if(active.has(`${p.id}:${type}`))continue;const base=Number(p.qa?.viralityScore||0),boost=observed?Math.min(25,Math.round(Number(observed.score||0)/4)):0;rows.push({projectId:p.id,topic:p.topic,type,priority:Math.min(125,Math.round(base+boost)),reason:observed?`Observed performance supports a ${type} experiment (${observed.views||0} views)`:`Launch-ready project needs a ${type} experiment`,evidence:observed?{views:observed.views,watchMinutes:observed.watchMinutes,performanceScore:observed.score}:null})}}
   return {generatedAt:new Date().toISOString(),recommendations:rows.sort((a,b)=>b.priority-a.priority).slice(0,30),policy:{ownerReviewRequired:true,autoCreate:false,autoPromote:false}};
 }
+
+export function seriesEpisodeBatch(series,{count=3}={}){
+  if(!series?.id)throw Error('series is required');const max=Math.max(1,Math.min(3,Number(count||3))),topics=(series.recommendedEpisodes||[]).map(x=>String(x||'').trim()).filter(Boolean).slice(0,max);
+  return topics.map((topic,i)=>({seriesId:series.id,index:i+1,topic,niche:series.niche||'storytelling',duration:60,style:'documentary',aspect:'9:16',evidence:{leadProjectId:series.leadProjectId,observedViews:Number(series.observedViews||0),observedWatchMinutes:Number(series.observedWatchMinutes||0),confidence:series.confidence||'early'}}));
+}

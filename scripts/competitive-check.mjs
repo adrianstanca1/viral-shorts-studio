@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 const read=f=>fs.readFileSync(f,'utf8');
-const server=read('app/server.mjs'),pipeline=read('app/pipeline.mjs'),docker=read('Dockerfile'),plan=read('V3_DEVELOPMENT_PLAN.md'),v4=read('V4_DEVELOPMENT_PLAN.md'),v5=read('V5_DEVELOPMENT_PLAN.md'),v6=read('V6_DEVELOPMENT_PLAN.md'),v7=read('V7_DEVELOPMENT_PLAN.md'),v8=read('V8_DEVELOPMENT_PLAN.md'),v9=read('V9_DEVELOPMENT_PLAN.md'),v10=read('V10_DEVELOPMENT_PLAN.md'),performance=read('app/platform-performance.mjs'),series=read('app/content-series.mjs'),thumbnail=read('app/thumbnail-lab.mjs'),backup=read('app/backup-bundle.mjs'),score=read('COMPETITIVE_SCORECARD.md');
+const server=read('app/server.mjs'),pipeline=read('app/pipeline.mjs'),docker=read('Dockerfile'),plan=read('V3_DEVELOPMENT_PLAN.md'),v4=read('V4_DEVELOPMENT_PLAN.md'),v5=read('V5_DEVELOPMENT_PLAN.md'),v6=read('V6_DEVELOPMENT_PLAN.md'),v7=read('V7_DEVELOPMENT_PLAN.md'),v8=read('V8_DEVELOPMENT_PLAN.md'),v9=read('V9_DEVELOPMENT_PLAN.md'),v10=read('V10_DEVELOPMENT_PLAN.md'),v11=read('V11_DEVELOPMENT_PLAN.md'),performance=read('app/platform-performance.mjs'),series=read('app/content-series.mjs'),thumbnail=read('app/thumbnail-lab.mjs'),performanceAgent=read('app/performance-agent.mjs'),socialAnalytics=read('app/social-analytics.mjs'),backup=read('app/backup-bundle.mjs'),score=read('COMPETITIVE_SCORECARD.md');
 const checks=[
   ['scoped MCP integration',server.includes("app.post('/mcp'")],
   ['30-minute production',server.includes('duration>1800')&&pipeline.includes('Math.min(240')],
@@ -37,6 +37,12 @@ const checks=[
   ['performance experiment lifecycle',series.includes('experimentLifecycleRecommendations')&&server.includes('experimentLifecycleRecommendations')],
   ['composed thumbnail variants',thumbnail.includes('drawtext=')&&thumbnail.includes('composition:')],
   ['campaign KPI progress',server.includes("/api/campaigns/:id/kpis")&&server.includes('campaignKpiProgress')],
-  ['V10 tracked work complete',!/^\s*- \[ \]/m.test(v10)]
+  ['V10 tracked work complete',!/^\s*- \[ \]/m.test(v10)],
+  ['performance-aware creator planning',server.includes('planCreatorGoalWithSignals')&&performanceAgent.includes('observedSignals')],
+  ['owner-confirmed series batching',server.includes("/api/content-series/:id/create-batch")&&series.includes('seriesEpisodeBatch')],
+  ['performance history trends',performance.includes('performanceTrend')&&server.includes("/api/campaigns/:id/trend")],
+  ['verified-free AI thumbnail briefs',server.includes("thumbnail-ai-briefs")&&thumbnail.includes('thumbnailCreativeBriefs')&&server.includes('canQueueFreeProvider')],
+  ['guarded social analytics',socialAnalytics.includes('video.list')&&server.includes("/api/performance/tiktok/sync")&&server.includes("/api/performance/instagram/sync")],
+  ['V11 tracked work complete',!/^\s*- \[ \]/m.test(v11)]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);

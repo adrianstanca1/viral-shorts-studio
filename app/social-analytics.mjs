@@ -1,0 +1,18 @@
+const flag=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
+const ttBase='https://open.tiktokapis.com';
+const graphVersion=env=>String(env.INSTAGRAM_GRAPH_VERSION||'v26.0');
+const graphBase=env=>String(env.INSTAGRAM_GRAPH_BASE_URL||`https://graph.instagram.com/${graphVersion(env)}`).replace(/\/$/,'');
+
+export function tiktokAnalyticsStatus(env=process.env){const configured=!!env.TIKTOK_ACCESS_TOKEN,scope=String(env.TIKTOK_SCOPES||'');const scoped=scope.split(/[\s,]+/).includes('video.list');return {id:'tiktok-analytics',configured,scoped,enabled:configured&&scoped&&flag(env.TIKTOK_ANALYTICS_ENABLED),scope:'video.list',readOnly:true};}
+export function instagramAnalyticsStatus(env=process.env){const configured=!!(env.INSTAGRAM_ACCESS_TOKEN&&env.INSTAGRAM_USER_ID);return {id:'instagram-analytics',configured,enabled:configured&&flag(env.INSTAGRAM_ANALYTICS_ENABLED),readOnly:true,accountType:'professional-required'};}
+
+async function json(url,opt={}){const r=await fetch(url,{...opt,signal:AbortSignal.timeout(30000)}),data=await r.json().catch(()=>({}));if(!r.ok||data?.error)throw new Error(`Social analytics request failed (${r.status}${data?.error?.code?` ${data.error.code}`:''})`);return data;}
+export async function fetchTikTokPostStatus(publishId,env=process.env){const st=tiktokAnalyticsStatus(env);if(!st.configured)throw new Error('TikTok analytics token is not configured');const data=await json(`${ttBase}/v2/post/publish/status/fetch/`,{method:'POST',headers:{authorization:`Bearer ${env.TIKTOK_ACCESS_TOKEN}`,'content-type':'application/json; charset=UTF-8'},body:JSON.stringify({publish_id:String(publishId)})});return data.data||{};}
+export async function fetchTikTokVideoAnalytics({videoId,env=process.env}){const st=tiktokAnalyticsStatus(env);if(!st.enabled)throw new Error(st.configured&&!st.scoped?'TikTok video.list scope is not granted':'TikTok analytics is not enabled');const fields='id,title,like_count,comment_count,share_count,view_count,duration',url=`${ttBase}/v2/video/query/?fields=${encodeURIComponent(fields)}`,data=await json(url,{method:'POST',headers:{authorization:`Bearer ${env.TIKTOK_ACCESS_TOKEN}`,'content-type':'application/json'},body:JSON.stringify({filters:{video_ids:[String(videoId)]}})}),v=data?.data?.videos?.[0];if(!v)throw new Error('TikTok video analytics returned no video');return {provider:'tiktok',videoId:String(v.id),metrics:{views:Number(v.view_count||0),likes:Number(v.like_count||0),comments:Number(v.comment_count||0),shares:Number(v.share_count||0)},observedAt:new Date().toISOString()};}
+export async function fetchInstagramMediaAnalytics({mediaId,env=process.env}){
+  const st=instagramAnalyticsStatus(env);if(!st.enabled)throw new Error('Instagram analytics is not enabled');const token=env.INSTAGRAM_ACCESS_TOKEN,base=graphBase(env),id=encodeURIComponent(String(mediaId));
+  const basicQ=new URLSearchParams({fields:'id,media_type,media_product_type,like_count,comments_count,timestamp,permalink',access_token:token}),basic=await json(`${base}/${id}?${basicQ}`);
+  const metrics={likes:Number(basic.like_count||0),comments:Number(basic.comments_count||0)},available=[];
+  for(const metric of ['views','reach','saved','shares','total_interactions']){try{const q=new URLSearchParams({metric,access_token:token}),data=await json(`${base}/${id}/insights?${q}`),row=data?.data?.[0],value=Array.isArray(row?.values)?row.values.at(-1)?.value:row?.total_value?.value??row?.value;if(value!==undefined&&value!==null){metrics[metric==='reach'?'reach':metric==='views'?'views':metric]=Number(value||0);available.push(metric)}}catch{}}
+  return {provider:'instagram',mediaId:String(basic.id||mediaId),metrics,availableMetrics:available,observedAt:new Date().toISOString()};
+}
