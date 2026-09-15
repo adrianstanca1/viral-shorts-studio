@@ -11,5 +11,6 @@ export function coordinatedAgentPlan(goal,{performance={top:[]},learning={rows:[
   const evidence={topProjects:(performance.top||[]).slice(0,3).map(x=>({projectId:x.projectId,topic:x.topic,views:Number(x.views||0),score:Number(x.score||0),platforms:x.platforms||[]})),platformSignals:(learning.rows||[]).slice(0,4),creativePatterns:(creative.patterns||[]).slice(0,4)};
   const stages=roles.map(([id,name,output],i)=>({id,name,index:i,status:'planned',dependsOn:i?[roles[i-1][0]]:[],output,ownerGate:id==='publishing'}));
   const handoffs=stages.slice(1).map((s,i)=>({from:stages[i].id,to:s.id,status:'pending',required:true}));
-  return {goal:clean,mode:'coordinated-approval-gated',costPolicy:'free-only',createdAt:new Date().toISOString(),stages,handoffs,evidence,policy:{ownerReviewRequired:true,autoPublish:false,autoBudget:false,arbitraryCode:false}};
+  const parallelWaves=[['research','growth'],['creative'],['production'],['qa'],['publishing']].map((agents,index)=>({index,agents,requires:index?index-1:null}));
+  return {goal:clean,mode:'coordinated-approval-gated',costPolicy:'free-only',createdAt:new Date().toISOString(),stages,handoffs,parallelWaves,evidence,policy:{ownerReviewRequired:true,autoPublish:false,autoBudget:false,arbitraryCode:false,dependencyAware:true}};
 }
