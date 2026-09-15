@@ -117,7 +117,9 @@ async function fetchJson(url){
 
 async function run(cmd,args,opts={}){
   return new Promise((resolve,reject)=>{
-    const p=spawn(cmd,args,{stdio:['ignore','pipe','pipe'],...opts});
+    const {input,...spawnOpts}=opts;
+    const p=spawn(cmd,args,{stdio:[input===undefined?'ignore':'pipe','pipe','pipe'],...spawnOpts});
+    if(input!==undefined)p.stdin.end(String(input));
     const timer=setTimeout(()=>p.kill('SIGKILL'),180000);
     p.on('error',e=>{clearTimeout(timer);reject(e);});
     p.on('close',()=>clearTimeout(timer));
@@ -254,7 +256,12 @@ const fliteVoices={en:'slt',fr:'slt',es:'slt',it:'slt',de:'slt'};
 async function makeNarration(text,outWav,targetDuration,{language='en',voice='auto'}={}){
   const safe=text.replace(/[\\':]/g,' ').replace(/\s+/g,' ').slice(0,420);
   const raw=outWav.replace(/\.wav$/,'.raw.wav');
-  await run('ffmpeg',['-y','-f','lavfi','-i',`flite=text='${safe}':voice=${voice==='auto'?(fliteVoices[language]||'slt'):voice}`,'-ar','44100','-ac','1',raw]);
+  let engine='flite';
+  const piper=process.env.PIPER_BIN||'piper',model=process.env[`PIPER_MODEL_${String(language).toUpperCase()}`]||process.env.PIPER_MODEL;
+  if(model){
+    try{await run(piper,['--model',model,'--output_file',raw],{input:safe});engine='piper';}catch{}
+  }
+  if(engine==='flite')await run('ffmpeg',['-y','-f','lavfi','-i',`flite=text='${safe}':voice=${voice==='auto'?(fliteVoices[language]||'slt'):voice}`,'-ar','44100','-ac','1',raw]);
   const measured=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',raw]))||targetDuration;
   const target=clamp(Number(targetDuration)||measured,3,12);
   let ratio=measured/target;
@@ -503,7 +510,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     });
     const mediaPool=mediaCached.value.images||[], videoPool=mediaCached.value.videos||[];
     stageMetric(metrics,'mediaDiscoverySeconds',mediaStarted);
-    const generationPlan={version:4,aspect:project.aspect||'9:16',language:project.language||'en',voice:project.voice||'auto',captionStyle:project.captionStyle||'bold',mode:project.mode||'multi-scene',duration:Number(project.duration),style:project.style||'documentary',freeOnly:true,scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
+    const generationPlan={version:4,aspect:project.aspect||'9:16',language:project.language||'en',voice:project.voice||'auto',captionStyle:project.captionStyle||'bold',mode:project.mode||'multi-scene',duration:Number(project.duration),style:project.style||'documentary',freeOnly:true,tts:{preferred:'piper',fallback:'flite'},checkpointing:{sceneLevel:true,reuseCompleted:true},scenes:storyboard.map(s=>({index:s.index,beat:s.beat,shotType:s.shotType,duration:s.durationHint,visualPrompt:s.visualPrompt,motionPrompt:s.motionPrompt,searchQuery:s.searchQuery}))};
     saveJson(path.join(dir,'generation-prompts.json'),generationPlan);
     project.generationPlan=generationPlan;
     const generativeQueue=writeGenerationQueue(project,dir);
@@ -536,7 +543,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       }
       return pack.selected;
     };
-    let cursor=0; const configuredConcurrency=Number(process.env.SCENE_CONCURRENCY||0),adaptiveConcurrency=Number(project.duration)<=30?3:2;
+    let cursor=0; const configuredConcurrency=Number(process.env.SCENE_CONCURRENCY||0),adaptiveConcurrency=Number(project.duration)<=30?3:Number(project.duration)>=600?1:2;
     const workerCount=Math.min(configuredConcurrency>0?configuredConcurrency:adaptiveConcurrency,storyboard.length,3);
     metrics.sceneConcurrency=workerCount;
     const worker=async()=>{while(true){const i=cursor++;if(i>=storyboard.length)return;results[i]=await renderOne(storyboard[i]);completed++;update({scenes:results.filter(Boolean).sort((a,b)=>a.index-b.index),progress:25+Math.round(60*completed/storyboard.length),metrics});}};

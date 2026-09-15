@@ -35,6 +35,13 @@ services:
       AUTO_CLOUD_ENHANCE: ${AUTO_CLOUD_ENHANCE:-true}
       WHITEBOARD_PYTHON: /opt/whiteboard/bin/python
       WHITEBOARD_ADAPTER: /app/python/whiteboard_scene.py
+      PIPER_BIN: ${PIPER_BIN:-piper}
+      PIPER_MODEL: ${PIPER_MODEL:-}
+      PIPER_MODEL_EN: ${PIPER_MODEL_EN:-}
+      PIPER_MODEL_FR: ${PIPER_MODEL_FR:-}
+      PIPER_MODEL_ES: ${PIPER_MODEL_ES:-}
+      PIPER_MODEL_IT: ${PIPER_MODEL_IT:-}
+      PIPER_MODEL_DE: ${PIPER_MODEL_DE:-}
       PROVIDER_REGISTRY_FILE: /app/provider-registry.json
       PEXELS_KEY: ${PEXELS_KEY:-}
       PIXABAY_KEY: ${PIXABAY_KEY:-}
