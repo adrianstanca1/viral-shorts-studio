@@ -2,15 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { providerEvidence, evidenceFresh } from './provider-verifier.mjs';
 import { getProviderSmoke, smokeFresh } from './provider-smoke.mjs';
+import { isPublicHttps } from './url-safety.mjs';
 
 const truthy=v=>['1','true','yes','on'].includes(String(v||'').toLowerCase());
 const safeName=s=>String(s||'asset').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120);
-export const providerCapabilities=()=>({huggingface:{kinds:['image'],adapter:'direct-http',requiresSmoke:true},nvidia:{kinds:['image'],adapter:'direct-http',requiresSmoke:true},higgsfield:{kinds:['video'],adapter:'connector-only',requiresSmoke:false},fal:{kinds:['image','video'],adapter:'not-implemented',requiresSmoke:true},external:{kinds:['image','video'],adapter:'manual',requiresSmoke:false}});
+export const providerCapabilities=()=>({huggingface:{kinds:['image'],adapter:'direct-http',requiresSmoke:true},nvidia:{kinds:['image'],adapter:'direct-http',requiresSmoke:true},higgsfield:{kinds:['video'],adapter:'connector-only',requiresSmoke:false},fal:{kinds:['image','video'],adapter:'not-implemented',requiresSmoke:true},external:{kinds:['video'],adapter:'configurable-http',requiresSmoke:true}});
 
 function providerConfig(id){
   const auto=truthy(process.env.AUTO_ENABLE_VERIFIED_FREE);
   if(id==='huggingface')return {enabled:auto||truthy(process.env.HF_GENERATION_ENABLED),verifiedFree:truthy(process.env.HF_GENERATION_VERIFIED_FREE),token:process.env.HF_TOKEN||'',kind:'image',model:process.env.HF_IMAGE_MODEL||'black-forest-labs/FLUX.1-schnell'};
   if(id==='nvidia')return {enabled:auto||truthy(process.env.NVIDIA_GENERATION_ENABLED),verifiedFree:truthy(process.env.NVIDIA_GENERATION_VERIFIED_FREE),token:process.env.NVIDIA_API_KEY||'',kind:'image',model:process.env.NVIDIA_IMAGE_MODEL||'',endpoint:process.env.NVIDIA_IMAGE_ENDPOINT||''};
+  if(id==='external')return {enabled:truthy(process.env.EXTERNAL_VIDEO_GENERATION_ENABLED),verifiedFree:truthy(process.env.EXTERNAL_VIDEO_GENERATION_VERIFIED_FREE),token:process.env.EXTERNAL_VIDEO_GENERATION_TOKEN||'',kind:'video',model:process.env.EXTERNAL_VIDEO_GENERATION_MODEL||'',endpoint:process.env.EXTERNAL_VIDEO_GENERATION_ENDPOINT||''};
   return {enabled:false,verifiedFree:false,kind:null};
 }
 
@@ -19,8 +21,8 @@ export function providerWorkerInventory(root=process.env.DATA_DIR||'/app/data'){
     const c=providerConfig(id),e=providerEvidence(root,id);
     const connectorOnly=id==='higgsfield',capability=providerCapabilities()[id]||{kinds:[],adapter:'unknown',requiresSmoke:true},smoke=getProviderSmoke(root,id);
     const verifiedFree=!!(e?.zeroCostVerified&&evidenceFresh(e)&&Number(e?.remaining||0)>0);
-    const enabled=!!c.enabled,preflightReady=!!(enabled&&verifiedFree&&c.token&&(id!=='nvidia'||c.endpoint));
-    return {id,enabled,verifiedFree,authenticated:e?.authenticated??null,remaining:Number(e?.remaining||0),preflightReady,smokePassed:smokeFresh(smoke),executable:!!(preflightReady&&(!capability.requiresSmoke||smokeFresh(smoke))),connectorOnly,verificationSource:e?.source||null,capability,smoke:smoke?{success:smoke.success,checkedAt:smoke.checkedAt,fresh:smokeFresh(smoke)}:null};
+    const enabled=!!c.enabled,needsEndpoint=['nvidia','external'].includes(id),preflightReady=!!(enabled&&verifiedFree&&c.token&&(!needsEndpoint||c.endpoint));
+    return {id,kind:c.kind||capability.kinds[0]||null,enabled,verifiedFree,authenticated:e?.authenticated??null,remaining:Number(e?.remaining||0),preflightReady,smokePassed:smokeFresh(smoke),executable:!!(preflightReady&&(!capability.requiresSmoke||smokeFresh(smoke))),connectorOnly,verificationSource:e?.source||null,capability,smoke:smoke?{success:smoke.success,checkedAt:smoke.checkedAt,fresh:smokeFresh(smoke)}:null};
   });
 }
 async function saveResponse(r,dest){
@@ -45,6 +47,19 @@ async function nvidia(job,outDir,c){
   return saveResponse(r,path.join(outDir,`${safeName(job.id)}.jpg`));
 }
 
+async function externalVideo(job,outDir,c){
+  const r=await fetch(c.endpoint,{method:'POST',headers:{authorization:`Bearer ${c.token}`,'content-type':'application/json'},body:JSON.stringify({prompt:job.prompt,kind:'video',model:c.model||undefined}),signal:AbortSignal.timeout(180000)});
+  if(!r.ok)throw new Error(`provider HTTP ${r.status}: ${(await r.text()).slice(0,300)}`);
+  const dest=path.join(outDir,`${safeName(job.id)}.mp4`),type=(r.headers.get('content-type')||'').toLowerCase();
+  if(type.includes('application/json')){
+    const j=await r.json(),b64=j.video||j.data?.[0]?.b64_video,url=String(j.url||j.data?.[0]?.url||'').trim();
+    if(b64){fs.writeFileSync(dest,Buffer.from(b64,'base64'));return dest;}
+    if(!isPublicHttps(url))throw new Error('provider JSON response must contain video bytes or a public HTTPS url');
+    const media=await fetch(url,{signal:AbortSignal.timeout(180000)});if(!media.ok)throw new Error(`provider media HTTP ${media.status}`);const length=Number(media.headers.get('content-length')||0);if(length>120_000_000)throw new Error('provider video exceeds 120 MB limit');fs.writeFileSync(dest,Buffer.from(await media.arrayBuffer()));return dest;
+  }
+  const length=Number(r.headers.get('content-length')||0);if(length>120_000_000)throw new Error('provider video exceeds 120 MB limit');fs.writeFileSync(dest,Buffer.from(await r.arrayBuffer()));return dest;
+}
+
 export async function executeProviderJob(job,outDir){
   const c=providerConfig(job.provider),e=providerEvidence(process.env.DATA_DIR||'/app/data',job.provider);
   const enabled=!!c.enabled,verifiedFree=!!(e?.zeroCostVerified&&evidenceFresh(e)&&Number(e?.remaining||0)>0);
@@ -56,5 +71,6 @@ export async function executeProviderJob(job,outDir){
     if(!c.endpoint)throw Object.assign(new Error('NVIDIA image endpoint not configured'),{retryable:false});
     return {file:await nvidia(job,outDir,c),kind:'image',provider:job.provider,model:c.model};
   }
+  if(job.provider==='external'){if(job.kind!=='video')throw Object.assign(new Error('external adapter currently supports video only'),{retryable:false});if(!c.endpoint)throw Object.assign(new Error('external video endpoint not configured'),{retryable:false});return {file:await externalVideo(job,outDir,c),kind:'video',provider:job.provider,model:c.model||'external-video'};}
   throw Object.assign(new Error('provider has no direct VPS adapter'),{retryable:false});
 }

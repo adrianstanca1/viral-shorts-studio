@@ -28,5 +28,5 @@ Turn the launch-ready Creator OS into a stronger editing, repurposing and optimi
 
 ## V2.5 Advanced Motion
 - [x] Record Hugging Face model candidates for future verified-free routing.
-- [ ] Add a verified-free video-generation worker route only after provider smoke verification.
-- [ ] Add image-to-video scene replacement with quality fallback to deterministic FFmpeg motion.
+- [x] Add a disabled-by-default configurable video worker route that becomes executable only after verified-free evidence and a successful smoke test.
+- [x] Use verified-free video candidates as scene replacements while retaining archive/FFmpeg motion as deterministic quality fallback.
