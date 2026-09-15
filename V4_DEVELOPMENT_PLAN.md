@@ -16,11 +16,11 @@
 - [x] Audit log for content, approval and publishing mutations.
 
 ## V4.4 Plugin Marketplace
-- [ ] Persistent integration/plugin registry layered over MCP tools.
-- [ ] Capability scopes, enable/disable state and health metadata.
-- [ ] Free-only compatibility declarations and smoke status.
+- [x] Persistent integration/plugin registry layered over MCP tools.
+- [x] Capability scopes, enable/disable state and health metadata.
+- [x] Free-only compatibility declarations and smoke status.
 
 ## V4.5 Reliability
-- [ ] Owner export/backup manifest for persistent Creator OS state.
-- [ ] Recovery validation and storage-health reporting.
-- [ ] Add V4 differentiators to release-gate regression checks.
+- [x] Owner export/backup manifest for persistent Creator OS state.
+- [x] Recovery validation and storage-health reporting.
+- [x] Add V4 differentiators to release-gate regression checks.
