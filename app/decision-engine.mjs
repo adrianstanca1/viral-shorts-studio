@@ -1,5 +1,5 @@
 import { withProvenance } from './recommendation-provenance.mjs';
-export function nextBestActions({campaigns=[],campaignPlans=[],performance={top:[]},creative={recommendations:[]},learning={recommendations:[]},runs=[]}={}){
+export function nextBestActions({campaigns=[],campaignPlans=[],performance={top:[]},creative={recommendations:[]},learning={recommendations:[]},runs=[],feedback={byType:{}}}={}){
   const actions=[];
   for(const p of campaignPlans)for(const a of p.actions||[])actions.push({...a,campaignId:p.campaignId});
   const failed=runs.filter(r=>['failed','needs-attention'].includes(r.status));
@@ -7,5 +7,5 @@ export function nextBestActions({campaigns=[],campaignPlans=[],performance={top:
   if((performance.top||[])[0]){const x=performance.top[0];actions.push(withProvenance({type:'repurpose-winner',priority:80,projectId:x.projectId,message:`Repurpose ${x.topic||'top project'} using its observed performance evidence.`},{sources:[{type:'observed-performance',id:x.projectId,label:x.topic||'top project',observed:true,evidence:{views:x.views,watchMinutes:x.watchMinutes,score:x.score,platforms:x.platforms}}]}));}
   if((learning.recommendations||[])[0]){const x=learning.recommendations[0];actions.push(withProvenance({type:'platform-focus',priority:68,message:x.reason||'Follow observed platform signal.'},{sources:[{type:'observed-performance',id:`${x.niche}:${x.platform}`,label:'cross-platform signal',observed:true,evidence:{niche:x.niche,platform:x.platform,confidence:x.confidence}}]}));}
   if((creative.recommendations||[])[0]){const x=creative.recommendations[0];actions.push(withProvenance({type:'creative-focus',priority:65,message:x.message},{sources:[{type:'observed-creative',id:x.type||'creative',label:'creative intelligence',observed:true,evidence:x.evidence||null}]}));}
-  return {generatedAt:new Date().toISOString(),actions:actions.sort((a,b)=>b.priority-a.priority).slice(0,20),policy:{ownerReviewRequired:true,autoPublish:false,autoBudget:false,freeOnly:true}};
+  const adjusted=actions.map(a=>{const f=feedback.byType?.[a.type]||{},accepted=Number(f.accepted||0),rejected=Number(f.rejected||0),delta=Math.max(-15,Math.min(15,(accepted-rejected)*3));return {...a,basePriority:a.priority,priority:Math.max(0,Math.min(100,a.priority+delta)),feedback:{accepted,rejected,delta}}});return {generatedAt:new Date().toISOString(),actions:adjusted.sort((a,b)=>b.priority-a.priority).slice(0,20),policy:{ownerReviewRequired:true,autoPublish:false,autoBudget:false,freeOnly:true,feedbackIsAdvisory:true}};
 }
