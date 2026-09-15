@@ -13,5 +13,5 @@
 - [x] Keep manual distribution packages as fallback when a connector is unavailable.
 
 ## V8.3 Release Assurance
-- [ ] Add V8 voice routing and external connector policy checks to release gate.
-- [ ] Deploy, verify health, and confirm exact GitHub Actions result.
+- [x] Add V8 voice routing and external connector policy checks to release gate.
+- [x] Deploy, verify health, and confirm exact GitHub Actions result.
