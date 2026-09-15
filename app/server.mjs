@@ -29,9 +29,10 @@ import { runResearch, listResearch, researchPrompt } from './research-studio.mjs
 import { listProducts, getProduct, createProduct } from './product-studio.mjs';
 import { listSites, getSite, createSite } from './website-studio.mjs';
 import { creatorTools, planCreatorGoal } from './creator-agent.mjs';
-import { listRuns, createRun, updateRun, syncRunWithProjects } from './creator-runs.mjs';
+import { listRuns, getRun, findRunByIdempotency, createRun, updateRun, syncRunWithProjects } from './creator-runs.mjs';
 import { buildCreatorAnalytics, recordAnalyticsSnapshot, readAnalytics, listExperiments, createExperiment, updateExperiment } from './creator-analytics.mjs';
 import { modelRecommendationPolicy } from './model-recommendations.mjs';
+import { buildCapacityBenchmark, saveCapacityBenchmark } from './capacity-benchmark.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -121,6 +122,7 @@ app.get('/api/diagnostics',async(req,res)=>{try{res.json(await diagnosticsSnapsh
 app.get('/api/stats',(req,res)=>res.json(statsSnapshot()));
 app.get('/api/analytics',(req,res)=>{const snapshot=buildCreatorAnalytics(list(),listPublishJobs(DATA,{}));recordAnalyticsSnapshot(DATA,snapshot);res.json(snapshot)});
 app.get('/api/analytics/history',(req,res)=>res.json(readAnalytics(DATA)));
+app.get('/api/capacity-benchmark',(req,res)=>{const result=buildCapacityBenchmark(list());saveCapacityBenchmark(DATA,result);res.json(result)});
 app.get('/api/experiments',(req,res)=>res.json({experiments:listExperiments(DATA)}));
 app.post('/api/experiments',(req,res)=>{try{const projectId=String(req.body?.projectId||'');if(!load(projectId))return res.status(404).json({error:'project not found'});res.status(201).json(createExperiment(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.patch('/api/experiments/:id',(req,res)=>{try{res.json(updateExperiment(DATA,req.params.id,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
@@ -158,8 +160,40 @@ app.get('/api/websites/:id/bundle',(req,res)=>{const x=getSite(DATA,req.params.i
 app.get('/api/creator-agent/tools',(req,res)=>res.json({tools:creatorTools,policy:{autonomy:'approval-gated',cost:'free-only'}}));
 app.post('/api/creator-agent/plan',(req,res)=>{try{res.status(201).json(planCreatorGoal(req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/creator-agent/runs',(req,res)=>{const runs=listRuns(DATA).slice(0,30).map(run=>syncRunWithProjects(DATA,run,load)).map(run=>({...run,artifacts:(run.artifacts||[]).map(a=>a.type==='video'&&a.id?({...a,projectStatus:load(a.id)?.status||a.status,progress:load(a.id)?.progress??null,launchReady:load(a.id)?.qa?.launchReady===true,approval:load(a.id)?.publishApproval?.status||null}):a)}));res.json({runs})});
-app.post('/api/creator-agent/execute',async(req,res)=>{let run;try{const plan=planCreatorGoal(req.body||{});run=createRun(DATA,plan);const artifacts=[];for(const step of run.steps){step.status='running';updateRun(DATA,run.id,{steps:run.steps,artifacts});if(step.tool==='research'){const report=await runResearch(DATA,{query:plan.goal,mode:'topic'});artifacts.push({type:'research',id:report.id,label:report.query});}else if(step.tool==='product-studio'){const item=createProduct(DATA,{title:plan.goal,type:/spreadsheet|tracker/i.test(plan.goal)?'spreadsheet':'ebook',brand:readBrandBrain(DATA)});artifacts.push({type:'product',id:item.id,label:item.title});}else if(step.tool==='website-builder'){const item=createSite(DATA,{name:plan.goal,goal:plan.goal,brand:readBrandBrain(DATA)});artifacts.push({type:'website',id:item.id,label:item.name});}else if(step.tool==='video-maker'){if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)throw Error('Video queue full');const brand=readBrandBrain(DATA),job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche:'storytelling',style:brand.visualStyle||'documentary',mode:'multi-scene',language:brand.language||'en',aspect:'9:16',voice:brand.voice||'auto',captionStyle:'bold',characterId:null,character:null,brand:{name:brand.name,version:brand.version},creatorContext:brandPrompt(brand,null),topic:plan.goal,duration:60,autonomous:true,autoCandidates:true,candidateCount:3,creatorRunId:run.id};save(job);artifacts.push({type:'video',id:job.id,topic:job.topic,status:'queued'});setImmediate(kick);}else if(step.tool==='image-maker'){const item=createImageBrief(DATA,{kind:'youtube-thumbnail',title:plan.goal,prompt:`High-retention thumbnail for ${plan.goal}`});artifacts.push({type:'image',id:item.id,label:item.title});}else if(step.tool==='publishing'){artifacts.push({type:'publishing',status:'blocked-until-video-approved'});}step.status='complete';}run=updateRun(DATA,run.id,{status:artifacts.some(a=>a.type==='video')?'producing':'awaiting-approval',steps:run.steps,artifacts,checkpoint:artifacts.some(a=>a.type==='video')?{stage:'video-production',projectId:artifacts.find(a=>a.type==='video').id,progress:0}:{stage:'approval'},completedAt:new Date().toISOString()});res.status(202).json(run)}catch(e){if(run)updateRun(DATA,run.id,{status:'failed',error:String(e.message||e).slice(0,240)});res.status(400).json({error:String(e.message||e)})}});
-
+async function executeCreatorStep(step,plan,run,artifacts){
+  step.status='running';step.startedAt=new Date().toISOString();delete step.error;updateRun(DATA,run.id,{steps:run.steps,artifacts});
+  if(step.tool==='research'){const report=await runResearch(DATA,{query:plan.goal,mode:'topic'});artifacts.push({type:'research',id:report.id,label:report.query});}
+  else if(step.tool==='brand-brain'){const brand=readBrandBrain(DATA);artifacts.push({type:'brand',name:brand.name,version:brand.version});}
+  else if(step.tool==='product-studio'){const item=createProduct(DATA,{title:plan.goal,type:/spreadsheet|tracker/i.test(plan.goal)?'spreadsheet':'ebook',brand:readBrandBrain(DATA)});artifacts.push({type:'product',id:item.id,label:item.title});}
+  else if(step.tool==='website-builder'){const item=createSite(DATA,{name:plan.goal,goal:plan.goal,brand:readBrandBrain(DATA)});artifacts.push({type:'website',id:item.id,label:item.name});}
+  else if(step.tool==='video-maker'){
+    const existing=(artifacts||[]).find(a=>a.type==='video'&&a.id),existingProject=existing?load(existing.id):null;
+    if(existingProject?.status==='failed'){prepareProjectRetry(existingProject);save(existingProject);setImmediate(kick);}
+    else if(!existingProject){if([...jobs.values()].filter(j=>!['complete','failed'].includes(j.status)).length>=5)throw Error('Video queue full');const brand=readBrandBrain(DATA),job={id:crypto.randomUUID(),status:'queued',progress:0,createdAt:new Date().toISOString(),niche:'storytelling',style:brand.visualStyle||'documentary',mode:'multi-scene',language:brand.language||'en',aspect:'9:16',voice:brand.voice||'auto',captionStyle:'bold',characterId:null,character:null,brand:{name:brand.name,version:brand.version},creatorContext:brandPrompt(brand,null),topic:plan.goal,duration:60,autonomous:true,autoCandidates:true,candidateCount:3,creatorRunId:run.id};save(job);artifacts.push({type:'video',id:job.id,topic:job.topic,status:'queued'});setImmediate(kick);}
+  }
+  else if(step.tool==='image-maker'){const item=createImageBrief(DATA,{kind:'youtube-thumbnail',title:plan.goal,prompt:`High-retention thumbnail for ${plan.goal}`});artifacts.push({type:'image',id:item.id,label:item.title});}
+  else if(step.tool==='publishing'){artifacts.push({type:'publishing',status:'blocked-until-video-approved'});}
+  else {step.status='skipped';step.completedAt=new Date().toISOString();step.error='unsupported creator tool';return;}
+  step.status='complete';step.completedAt=new Date().toISOString();
+}
+app.post('/api/creator-agent/execute',async(req,res)=>{
+  let run;try{
+    const plan=planCreatorGoal(req.body||{}),key=String(req.get('idempotency-key')||req.body?.idempotencyKey||'').trim().slice(0,120),existing=key?findRunByIdempotency(DATA,key):null;
+    if(existing)return res.status(200).json(syncRunWithProjects(DATA,existing,load));
+    run=createRun(DATA,plan,{idempotencyKey:key});const artifacts=[];
+    for(const step of run.steps)await executeCreatorStep(step,plan,run,artifacts);
+    const video=artifacts.find(a=>a.type==='video');run=updateRun(DATA,run.id,{status:video?'producing':'awaiting-approval',steps:run.steps,artifacts,checkpoint:video?{stage:'video-production',projectId:video.id,progress:0}:{stage:'approval'},completedAt:new Date().toISOString()});res.status(202).json(run);
+  }catch(e){if(run){const msg=String(e.message||e).slice(0,240),steps=(run.steps||[]).map(s=>s.status==='running'?{...s,status:'failed',error:msg,completedAt:new Date().toISOString()}:s);updateRun(DATA,run.id,{status:'failed',steps,error:msg});}res.status(400).json({error:String(e.message||e)})}
+});
+app.post('/api/creator-agent/runs/:id/retry',async(req,res)=>{
+  const run=getRun(DATA,req.params.id);if(!run)return res.status(404).json({error:'run not found'});
+  const plan=planCreatorGoal({goal:run.goal}),artifacts=[...(run.artifacts||[])],failedStep=(run.steps||[]).find(s=>s.status==='failed');
+  try{
+    if(run.checkpoint?.projectId){const project=load(run.checkpoint.projectId);if(project?.status==='failed'){prepareProjectRetry(project);save(project);setImmediate(kick);const updated=updateRun(DATA,run.id,{status:'producing',checkpoint:{stage:'video-production',projectId:project.id,progress:Number(project.progress||0)},error:null});return res.status(202).json(updated);}}
+    if(!failedStep)return res.status(409).json({error:'no failed workflow step to retry'});
+    failedStep.status='pending';delete failedStep.error;await executeCreatorStep(failedStep,plan,run,artifacts);const video=artifacts.find(a=>a.type==='video');const updated=updateRun(DATA,run.id,{status:video?'producing':'awaiting-approval',steps:run.steps,artifacts,checkpoint:video?{stage:'video-production',projectId:video.id,progress:Number(load(video.id)?.progress||0)}:{stage:'approval'},error:null});res.status(202).json(updated);
+  }catch(e){const msg=String(e.message||e).slice(0,240);failedStep.status='failed';failedStep.error=msg;res.status(400).json(updateRun(DATA,run.id,{status:'failed',steps:run.steps,error:msg}));}
+});
 
 app.get('/api/openrouter/free-models',(req,res)=>res.json(readOpenRouterFreeCatalog()));
 app.get('/api/provider-worker/status',(req,res)=>{const f=path.join(DATA,'provider-worker-status.json');if(!fs.existsSync(f))return res.json({state:'offline'});try{res.json(JSON.parse(fs.readFileSync(f,'utf8')))}catch{res.json({state:'invalid'})}});

@@ -15,8 +15,8 @@ Ship a launch-ready Creator OS that can safely move from idea to research, produ
 - [x] Research, product, website and image steps.
 - [x] Real video jobs launched from Creator Agent.
 - [x] Advance creator runs automatically from render -> QA -> approval-pending.
-- [ ] Add resumable workflow checkpoints and idempotency.
-- [ ] Surface failed workflow steps and targeted retry.
+- [x] Add resumable workflow checkpoints and idempotency.
+- [x] Surface failed workflow steps and targeted retry.
 
 ## Phase 3 — Real Asset Generation
 - [x] Make Image Maker provider jobs first-class assets rather than pseudo-projects.
