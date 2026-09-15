@@ -29,6 +29,7 @@ import { runResearch, listResearch, researchPrompt } from './research-studio.mjs
 import { listProducts, createProduct } from './product-studio.mjs';
 import { listSites, createSite } from './website-studio.mjs';
 import { creatorTools, planCreatorGoal } from './creator-agent.mjs';
+import { listRuns, createRun, updateRun } from './creator-runs.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -142,6 +143,9 @@ app.get('/api/websites',(req,res)=>res.json({sites:listSites(DATA)}));
 app.post('/api/websites',(req,res)=>{try{res.status(201).json(createSite(DATA,req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
 app.get('/api/creator-agent/tools',(req,res)=>res.json({tools:creatorTools,policy:{autonomy:'approval-gated',cost:'free-only'}}));
 app.post('/api/creator-agent/plan',(req,res)=>{try{res.status(201).json(planCreatorGoal(req.body||{}))}catch(e){res.status(400).json({error:String(e.message||e)})}});
+app.get('/api/creator-agent/runs',(req,res)=>res.json({runs:listRuns(DATA).slice(0,30)}));
+app.post('/api/creator-agent/execute',async(req,res)=>{let run;try{const plan=planCreatorGoal(req.body||{});run=createRun(DATA,plan);const artifacts=[];for(const step of run.steps){step.status='running';updateRun(DATA,run.id,{steps:run.steps,artifacts});if(step.tool==='research'){const report=await runResearch(DATA,{query:plan.goal,mode:'topic'});artifacts.push({type:'research',id:report.id,label:report.query});}else if(step.tool==='product-studio'){const item=createProduct(DATA,{title:plan.goal,type:/spreadsheet|tracker/i.test(plan.goal)?'spreadsheet':'ebook'});artifacts.push({type:'product',id:item.id,label:item.title});}else if(step.tool==='website-builder'){const item=createSite(DATA,{name:plan.goal,goal:plan.goal});artifacts.push({type:'website',id:item.id,label:item.name});}else if(step.tool==='video-maker'){artifacts.push({type:'video-intent',topic:plan.goal,status:'ready-to-queue'});}else if(step.tool==='image-maker'){const item=createImageBrief(DATA,{kind:'youtube-thumbnail',title:plan.goal,prompt:`High-retention thumbnail for ${plan.goal}`});artifacts.push({type:'image',id:item.id,label:item.title});}else if(step.tool==='publishing'){artifacts.push({type:'publishing',status:'blocked-until-video-approved'});}step.status='complete';}run=updateRun(DATA,run.id,{status:'awaiting-approval',steps:run.steps,artifacts,completedAt:new Date().toISOString()});res.status(202).json(run)}catch(e){if(run)updateRun(DATA,run.id,{status:'failed',error:String(e.message||e).slice(0,240)});res.status(400).json({error:String(e.message||e)})}});
+
 
 app.get('/api/openrouter/free-models',(req,res)=>res.json(readOpenRouterFreeCatalog()));
 app.get('/api/provider-worker/status',(req,res)=>{const f=path.join(DATA,'provider-worker-status.json');if(!fs.existsSync(f))return res.json({state:'offline'});try{res.json(JSON.parse(fs.readFileSync(f,'utf8')))}catch{res.json({state:'invalid'})}});
