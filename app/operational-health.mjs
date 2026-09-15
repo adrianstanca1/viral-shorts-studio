@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 function parsedTime(value){const t=Date.parse(value||0);return Number.isFinite(t)?t:null}
 function incident(type,item,severity,reason){return {type,id:item.id,status:item.status,updatedAt:item.updatedAt||item.createdAt||null,severity,reason}}
 
@@ -23,5 +24,9 @@ export function operationalHealth({projects=[],runs=[],backlog=[],executions=[],
 
 export function maintenancePreview(health,{limit=10}={}){
   const max=Math.max(1,Math.min(25,Number(limit||10))),resetBacklog=(health?.incidents||[]).filter(x=>x.type==='backlog').slice(0,max).map(x=>({id:x.id,status:x.status,updatedAt:x.updatedAt,severity:x.severity,reason:x.reason}));
-  return {generatedAt:new Date().toISOString(),resetBacklog,count:resetBacklog.length,blocked:{projects:Number(health?.stale?.projects||0),runs:Number(health?.stale?.runs||0)},policy:{previewOnly:true,ownerConfirmationRequired:true,projectsAutoRecovered:false,runsAutoRecovered:false,autoPublish:false,freeOnly:true}};
+  const fingerprintPayload={resetBacklog:resetBacklog.map(x=>({id:x.id,status:x.status,updatedAt:x.updatedAt})),staleMinutes:Number(health?.staleMinutes||45),failureWindowMinutes:Number(health?.failureWindowMinutes||60)};
+  const previewToken=crypto.createHash('sha256').update(JSON.stringify(fingerprintPayload)).digest('hex');
+  return {generatedAt:new Date().toISOString(),previewToken,resetBacklog,count:resetBacklog.length,blocked:{projects:Number(health?.stale?.projects||0),runs:Number(health?.stale?.runs||0)},policy:{previewOnly:true,ownerConfirmationRequired:true,stateBoundConfirmation:true,projectsAutoRecovered:false,runsAutoRecovered:false,autoPublish:false,freeOnly:true}};
 }
+
+export function maintenancePreviewMatches(preview,token){return typeof token==='string'&&token.length===64&&preview?.previewToken===token}
