@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { acquireRuntimeLock, startRuntimeLockHeartbeat } from './runtime-lock.mjs';
 import { produceProject, mediaProviderStatus } from './pipeline.mjs';
 import { textProviderStatus } from './text-router.mjs';
 import { generativeStatus } from './generative-router.mjs';
@@ -623,10 +624,12 @@ setInterval(()=>{if(!enabledFlag(process.env.AUTO_EXECUTE_SCHEDULED_YOUTUBE??'fa
 setInterval(()=>{if(!enabledFlag(process.env.AUTO_EXECUTE_SCHEDULED_TIKTOK??'false'))return;const status=tiktokPublisherStatus();if(!status.enabled)return;const due=duePublishJobs(DATA,{platform:'tiktok'}).filter(j=>!publishingExecutions.has(j.id));if(due[0])executePublishJob(due[0]).catch(()=>{});},30000).unref();
 setInterval(()=>{if(!enabledFlag(process.env.AUTO_EXECUTE_SCHEDULED_INSTAGRAM??'false'))return;const status=instagramPublisherStatus();if(!status.enabled)return;const due=duePublishJobs(DATA,{platform:'instagram-reels'}).filter(j=>!publishingExecutions.has(j.id));if(due[0])executePublishJob(due[0]).catch(()=>{});},30000).unref();
 setImmediate(()=>{kick();if(enabledFlag(process.env.AUTO_CLOUD_ENHANCE??'true'))for(const j of list())if(j.status==='complete')maybeAutoCloudPlan(j.id).catch(()=>{});});
+const runtimeLock=acquireRuntimeLock(DATA);const stopRuntimeLockHeartbeat=startRuntimeLockHeartbeat(runtimeLock);
 const server=app.listen(PORT,'0.0.0.0',()=>console.log(`Viral Shorts Studio listening on ${PORT}`));
 async function gracefulShutdown(signal){
   if(shuttingDown)return;shuttingDown=true;console.log(`${signal}: draining`);server.close();
   const deadline=Date.now()+35_000;while(active&&Date.now()<deadline)await new Promise(r=>setTimeout(r,500));
+  stopRuntimeLockHeartbeat();runtimeLock.release();
   process.exit(active?1:0);
 }
 process.once('SIGTERM',()=>gracefulShutdown('SIGTERM'));process.once('SIGINT',()=>gracefulShutdown('SIGINT'));
