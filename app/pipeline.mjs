@@ -137,13 +137,15 @@ async function tavilyResearch(topic){
   const key=process.env.TAVILY_API_KEY||process.env.TAVILY_KEY;
   if(!key || process.env.TAVILY_ENABLED!=='true') return [];
   try{
-    const r=await fetch('https://api.tavily.com/search',{
-      method:'POST',signal:AbortSignal.timeout(25000),headers:{'content-type':'application/json'},
-      body:JSON.stringify({api_key:key,query:topic,search_depth:'basic',max_results:5,include_answer:false,include_raw_content:false})
-    });
-    if(!r.ok) return [];
-    const d=await r.json();
-    return (d.results||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url,extract:cleanText(x.content||'').slice(0,1800),provider:'tavily'})).filter(x=>x.url&&x.extract);
+    return (await cachedJson(DATA,'tavily',topic,300_000,async ()=>{
+      const r=await fetch('https://api.tavily.com/search',{
+        method:'POST',signal:AbortSignal.timeout(25000),headers:{'content-type':'application/json'},
+        body:JSON.stringify({api_key:key,query:topic,search_depth:'basic',max_results:5,include_answer:false,include_raw_content:false})
+      });
+      if(!r.ok) return [];
+      const d=await r.json();
+      return (d.results||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url,extract:cleanText(x.content||'').slice(0,1800),provider:'tavily'})).filter(x=>x.url&&x.extract);
+    })).value||[];
   }catch{return [];}
 }
 
@@ -152,15 +154,17 @@ async function firecrawlResearch(topic){
   const enabled=process.env.FIRECRAWL_ENABLED??process.env.FIREOCRAPE_ENABLED;
   if(!key || enabled!=='true') return [];
   try{
-    const r=await fetch('https://api.firecrawl.dev/v1/search',{
-      method:'POST',signal:AbortSignal.timeout(25000),
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`,
-               'Firecrawl-Api-Key':key},
-      body:JSON.stringify({query:topic,limit:5,givePriorityToDocumentContentInMarkdown:true})
-    });
-    if(!r.ok) return [];
-    const d=await r.json();
-    return (d.data||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url||x.links?.[0]||'',extract:cleanText(x.content||x.snippet||'').slice(0,1800),provider:'firecrawl'})).filter(x=>x.url&&x.extract);
+    return (await cachedJson(DATA,'firecrawl',topic,300_000,async ()=>{
+      const r=await fetch('https://api.firecrawl.dev/v1/search',{
+        method:'POST',signal:AbortSignal.timeout(25000),
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`,
+                 'Firecrawl-Api-Key':key},
+        body:JSON.stringify({query:topic,limit:5,givePriorityToDocumentContentInMarkdown:true})
+      });
+      if(!r.ok) return [];
+      const d=await r.json();
+      return (d.data||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url||x.links?.[0]||'',extract:cleanText(x.content||x.snippet||'').slice(0,1800),provider:'firecrawl'})).filter(x=>x.url&&x.extract);
+    })).value||[];
   }catch{return [];}
 }
 
@@ -168,14 +172,16 @@ async function braveSearchResearch(topic){
   const key=process.env.BRAVE_API_KEY;
   if(!key || process.env.BRAVE_SEARCH_ENABLED!=='true') return [];
   try{
-    const r=await fetch('https://api.search.brave.com/res/v1/web/search',{
-      method:'POST',signal:AbortSignal.timeout(25000),
-      headers:{'X-Subscription-Token':key,'Content-Type':'application/json'},
-      body:JSON.stringify({q:topic,search_lang:'en',count:5,freshness:'month'})
-    });
-    if(!r.ok) return [];
-    const d=await r.json();
-    return (d.web?.results||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url,extract:cleanText(x.snippet||'').slice(0,1800),provider:'brave'})).filter(x=>x.url&&x.extract);
+    return (await cachedJson(DATA,'brave',topic,300_000,async ()=>{
+      const r=await fetch('https://api.search.brave.com/res/v1/web/search',{
+        method:'POST',signal:AbortSignal.timeout(25000),
+        headers:{'X-Subscription-Token':key,'Content-Type':'application/json'},
+        body:JSON.stringify({q:topic,search_lang:'en',count:5,freshness:'month'})
+      });
+      if(!r.ok) return [];
+      const d=await r.json();
+      return (d.web?.results||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url,extract:cleanText(x.snippet||'').slice(0,1800),provider:'brave'})).filter(x=>x.url&&x.extract);
+    })).value||[];
   }catch{return [];}
 }
 
