@@ -32,45 +32,71 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_HOST: 85.190.100.68
+      VPS_USER: administrator
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-      VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
     steps:
-      - name: Validate deployment credentials
+      - name: Validate deployment credential
         run: |
           set -euo pipefail
-          for name in VPS_HOST VPS_USER VPS_SSH_KEY VPS_KNOWN_HOSTS VPS_APP_DIR; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing required production secret: $name"
-              exit 1
-            fi
-          done
+          if [[ -z "${VPS_SSH_KEY:-}" && -z "${VPS_PASSWORD:-}" ]]; then
+            echo "::error::Set either VPS_SSH_KEY or VPS_PASSWORD in the production environment secrets."
+            exit 1
+          fi
 
       - name: Configure SSH
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/known_hosts <<'EOF'
+          85.190.100.68 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAOE0euHxCIKpRJj5CETbE0X+4j3uoUKFp4m8xhVRGY
+          EOF
           chmod 600 ~/.ssh/known_hosts
+
+          if [[ -n "${VPS_SSH_KEY:-}" ]]; then
+            printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
 
       - name: Deploy target stack with rollback
         shell: bash
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}"             "APP_DIR='${VPS_APP_DIR}' bash -s" <<'REMOTE'
+
+          if [[ -n "${VPS_SSH_KEY:-}" ]]; then
+            ssh_cmd=(ssh -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$VPS_PASSWORD"
+            ssh_cmd=(sshpass -e ssh)
+          fi
+
+          "${ssh_cmd[@]}" "${VPS_USER}@${VPS_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          cd "$APP_DIR"
 
           expected_origin='adrianstanca1/viral-shorts-studio'
-          origin="$(git remote get-url origin)"
-          [[ "$origin" == *"$expected_origin"* ]] || {
-            echo "Unexpected git origin: $origin" >&2
+          APP_DIR="$(
+            find /home /opt /srv -maxdepth 4 -type d -name .git 2>/dev/null |
+            while read -r gitdir; do
+              repo="${gitdir%/.git}"
+              [[ -f "$repo/compose.yaml" ]] || continue
+              origin="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
+              if [[ "$origin" == *"$expected_origin"* ]]; then
+                printf '%s\n' "$repo"
+                break
+              fi
+            done
+          )"
+
+          [[ -n "$APP_DIR" ]] || {
+            echo "viral-shorts-studio checkout not found." >&2
             exit 1
           }
+
+          cd "$APP_DIR"
 
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "Production working tree is dirty; refusing deploy." >&2
