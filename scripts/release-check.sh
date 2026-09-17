@@ -2,22 +2,28 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo '[1/9] Syntax checking all Node modules'
+echo '[1/11] Syntax checking all Node modules'
 for file in app/*.mjs; do node --check "$file"; done
 
-echo '[2/9] Syntax checking Python renderer'
+echo '[2/11] Syntax checking Python renderer'
 python3 -m py_compile python/whiteboard_scene.py
 
-echo '[3/9] Running self-tests'
+echo '[3/11] Running self-tests'
 npm test
 
-echo '[4/9] Auditing production dependencies'
+echo '[4/11] Auditing production dependencies'
 npm audit --omit=dev
 
-echo '[5/9] Validating Docker Compose'
+echo '[5/11] Validating Docker Compose'
 docker compose config -q
 
-echo '[6/9] Checking repository hygiene, secret safety, and cost policy'
+echo '[6/11] Validating Hermes safety configuration'
+node hermes/validate.mjs
+
+echo '[7/11] Testing Hermes approval and safety policy'
+node hermes/policy-test.mjs
+
+echo '[8/11] Checking repository hygiene, secret safety, and cost policy'
 tracked_sensitive="$(git ls-files | grep -Ei '(^|/)(\.env($|\.)|.*\.(pem|key|p12|pfx|jks)$|id_rsa$|id_ed25519$|credentials[^/]*\.json$|service-account[^/]*\.json$|\.npmrc$|secrets(/|$))' | grep -vE '(^|/)\.env\.example$' || true)"
 if [[ -n "$tracked_sensitive" ]]; then
   echo 'Tracked sensitive-looking files detected:' >&2
@@ -37,7 +43,7 @@ if [[ -n "$policy_violation" ]]; then
   exit 1
 fi
 
-echo '[7/9] Validating provider credential references'
+echo '[9/11] Validating provider credential references'
 python3 - <<'PY'
 import json,re
 with open('provider-registry.json',encoding='utf-8') as f: data=json.load(f)
@@ -53,10 +59,10 @@ for i,item in enumerate(data):
 print('provider credential references: ok')
 PY
 
-echo '[8/9] Checking whitespace'
+echo '[10/11] Checking whitespace'
 git diff --check
 
-echo '[9/9] Validating competitive differentiators'
+echo '[11/11] Validating competitive differentiators'
 node scripts/competitive-check.mjs
 
 echo 'release-check: ok'
