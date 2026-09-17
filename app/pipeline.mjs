@@ -147,6 +147,37 @@ async function tavilyResearch(topic){
   }catch{return [];}
 }
 
+async function firecrawlResearch(topic){
+  const key=process.env.FIRECRAWL_API_KEY;
+  if(!key || process.env.FIREOCRAPE_ENABLED!=='true') return [];
+  try{
+    const r=await fetch('https://api.firecrawl.dev/v1/search',{
+      method:'POST',signal:AbortSignal.timeout(25000),
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`,
+               'Firecrawl-Api-Key':key},
+      body:JSON.stringify({query:topic,limit:5,givePriorityToDocumentContentInMarkdown:true})
+    });
+    if(!r.ok) return [];
+    const d=await r.json();
+    return (d.data||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url||x.links?.[0]||'',extract:cleanText(x.content||x.snippet||'').slice(0,1800),provider:'firecrawl'})).filter(x=>x.url&&x.extract);
+  }catch{return [];}
+}
+
+async function braveSearchResearch(topic){
+  const key=process.env.BRAVE_API_KEY;
+  if(!key || process.env.BRAVE_SEARCH_ENABLED!=='true') return [];
+  try{
+    const r=await fetch('https://api.search.brave.com/res/v1/web/search',{
+      method:'POST',signal:AbortSignal.timeout(25000),
+      headers:{'X-Subscription-Token':key,'Content-Type':'application/json'},
+      body:JSON.stringify({q:topic,search_lang:'en',count:5,freshness:'month'})
+    });
+    if(!r.ok) return [];
+    const d=await r.json();
+    return (d.web?.results||[]).slice(0,5).map(x=>({title:cleanText(x.title||'Web source'),url:x.url,extract:cleanText(x.snippet||'').slice(0,1800),provider:'brave'})).filter(x=>x.url&&x.extract);
+  }catch{return [];}
+}
+
 export async function researchTopic(topic){
   const q=new URLSearchParams({action:'query',list:'search',srsearch:topic,srlimit:'4',format:'json',origin:'*'});
   const search=await fetchJson(`https://en.wikipedia.org/w/api.php?${q}`);
@@ -158,7 +189,7 @@ export async function researchTopic(topic){
     const page=Object.values(data.query?.pages||{})[0];
     if(page?.extract) sources.push({title:page.title,url:page.fullurl,extract:cleanText(page.extract),provider:'wikipedia'});
   }
-  const web=await tavilyResearch(topic);
+  const web=[...await tavilyResearch(topic),...await firecrawlResearch(topic),...await braveSearchResearch(topic)];
   const seen=new Set(sources.map(x=>x.url));
   for(const item of web){ if(!seen.has(item.url)){sources.push(item);seen.add(item.url);} }
   return rankSources(topic,sources).slice(0,8);
