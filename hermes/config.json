@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "name": "Hermes Creator OS",
+  "mode": "production-safe",
+  "orchestrator": {
+    "role": "planner-delegator",
+    "mayExecuteDestructiveActions": false,
+    "maxParallelWorkers": 6,
+    "requireTaskPlan": true,
+    "requireAuditLog": true
+  },
+  "agents": {
+    "builder": ["repo.read", "repo.write", "tests.run", "docker.build", "git.commit", "git.pr"],
+    "research": ["web.search", "web.fetch", "source.verify"],
+    "media": ["script.generate", "storyboard.generate", "image.generate", "video.generate", "voice.generate", "whiteboard.generate", "edit.compose"],
+    "deployment": ["viral-shorts.pull", "viral-shorts.build", "viral-shorts.restart", "viral-shorts.health", "viral-shorts.logs"],
+    "recovery": ["job.inspect", "job.retry", "provider.failover", "viral-shorts.restart"],
+    "security": ["secret.redact", "policy.check", "audit.write", "checkpoint.create"]
+  },
+  "routing": {
+    "order": ["local", "verified-free-cloud", "included-subscription", "paid-with-approval"],
+    "localPreferred": true,
+    "paidFallback": false,
+    "requireProviderHealthCheck": true,
+    "requireVerifiedFreeBeforeUse": true,
+    "maxRetriesPerProvider": 2,
+    "circuitBreaker": {"enabled": true, "failureThreshold": 3, "cooldownSeconds": 300}
+  },
+  "approvalGates": ["publish.external", "spend.money", "persistent.delete", "security.change", "access.change", "infrastructure.destructive"],
+  "deployment": {
+    "allowedStack": "viral-shorts",
+    "denyUnrelatedServiceMutation": true,
+    "requirePreDeployTests": true,
+    "requirePostDeployHealthCheck": true,
+    "requireRollbackPoint": true
+  },
+  "security": {
+    "secretsInRepo": false,
+    "useAuthenticatedGateway": true,
+    "redactSecretsInLogs": true,
+    "publicSecretEndpoints": false,
+    "sandboxWorkers": true,
+    "checkpointBeforeMutation": true,
+    "denyCommands": ["mkfs", "fdisk", "parted", "dd", "shutdown", "reboot", "halt", "poweroff", "iptables", "visudo"]
+  },
+  "memory": {"sessionRetention": true, "projectMemory": true, "storeSecrets": false, "storeAuditEvents": true}
+}
