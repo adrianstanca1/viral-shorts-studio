@@ -8,11 +8,18 @@ req(cfg.routing?.localPreferred===true,'local routing must be preferred');
 req(cfg.routing?.paidFallback===false,'paid fallback must be disabled');
 req(cfg.routing?.requireProviderHealthCheck===true,'provider health checks are required');
 req(cfg.routing?.requireVerifiedFreeBeforeUse===true,'free providers must be verified before use');
+req(cfg.routing?.circuitBreaker?.enabled===true,'routing circuit breaker must remain enabled');
 req(cfg.deployment?.allowedStack==='viral-shorts','deployment must be limited to viral-shorts');
 req(cfg.deployment?.denyUnrelatedServiceMutation===true,'unrelated services must be protected');
+req(cfg.deployment?.requirePreDeployTests===true,'pre-deploy tests must remain enabled');
+req(cfg.deployment?.requirePostDeployHealthCheck===true,'post-deploy health checks must remain enabled');
+req(cfg.deployment?.requireRollbackPoint===true,'rollback points must remain required');
 req(cfg.security?.secretsInRepo===false,'secrets must not live in repo');
 req(cfg.security?.useAuthenticatedGateway===true,'authenticated gateway must be used');
+req(cfg.security?.redactSecretsInLogs===true,'secret redaction in logs must remain enabled');
+req(cfg.security?.publicSecretEndpoints===false,'public secret endpoints must remain disabled');
 req(cfg.security?.sandboxWorkers===true,'worker agents must be sandboxed');
+req(cfg.security?.checkpointBeforeMutation===true,'checkpoints before mutation must remain enabled');
 req(cfg.memory?.storeSecrets===false,'memory must not store secrets');
 if(errors.length){console.error('HERMES CONFIG INVALID'); for(const e of errors) console.error('- '+e); process.exit(1)}
 console.log('HERMES CONFIG OK');
