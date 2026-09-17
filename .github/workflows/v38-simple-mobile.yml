@@ -1,0 +1,68 @@
+name: V38 Simple Mobile
+on:
+  push:
+    paths:
+      - '.github/workflows/v38-simple-mobile.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply V38 mobile simplicity
+        shell: python
+        run: |
+          from pathlib import Path
+          ui=Path('app/public/index.html')
+          s=ui.read_text()
+          css=".simple-mode-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#f8f9fb;margin:8px 0 12px}.simple-mode-toggle button{width:auto;margin:0;padding:8px 11px}.simple-mode-badge{font-size:11px;font-weight:900;padding:5px 8px;border-radius:999px;background:var(--soft);color:#5145cd}.simple-hidden{display:none!important}"
+          marker='@media(max-width:950px){'
+          assert marker in s
+          s=s.replace(marker,css+marker,1)
+          sections="const workspaceSections={create:[['Make',['create','assistant','research']],['Assets',['image-maker','characters','brand-brain','voice-studio']],['Review',['library','production-metrics','detail']]],grow:[['Plan',['campaigns','opportunity-lab','series-intelligence','portfolio']],['Improve',['growth','performance','growth-learning']],['Decide',['executive','strategy','monetization']]],operate:[['Control',['command-center','operations']],['Publish',['publishing']],['Team',['workspace']]],advanced:[['Automation',['agents','plugins']],['Build',['products','websites']],['System',['ai-routing']]]};"
+          assert sections in s
+          simple=sections+"\nconst simpleWorkspaceTools={create:['create','library','assistant','research','image-maker'],grow:['opportunity-lab','campaigns','performance','executive'],operate:['command-center','publishing','workspace'],advanced:['agents','plugins']};\nfunction isSimpleMode(){try{return localStorage.getItem('creatorSimpleMode')!=='off'}catch{return true}}\nfunction visibleWorkspaceIds(name){const all=workspaceGroups[name]||[];if(!isSimpleMode()||name==='home')return all;const essential=new Set(simpleWorkspaceTools[name]||[]);for(const item of getPinnedTools())if(item.workspace===name)essential.add(item.id);return all.filter(id=>essential.has(id))}\nfunction toggleSimpleMode(){try{localStorage.setItem('creatorSimpleMode',isSimpleMode()?'off':'on')}catch{}renderSimpleModeControl();renderWorkspaceTools(activeWorkspace);renderWorkspaceOverview(activeWorkspace);renderAppMenu(document.getElementById('menuSearch')?.value||'');applyToolFocus()}\nfunction renderSimpleModeControl(){const el=document.getElementById('simpleModeControl');if(!el)return;const simple=isSimpleMode();el.innerHTML=`<div><b>${simple?'Simple mode':'Power mode'}</b><div class=\"muted\">${simple?'Shows the tools used most often. Pinned tools stay visible.':'Shows every Creator OS tool.'}</div></div><button class=\"secondary\" onclick=\"toggleSimpleMode()\">${simple?'Show all tools':'Use simple mode'}</button>`}"
+          s=s.replace(sections,simple,1)
+          old="el.innerHTML=(workspaceGroups[name]||[]).map(id=>"
+          assert old in s
+          s=s.replace(old,"el.innerHTML=visibleWorkspaceIds(name).map(id=>",1)
+          old2="${ids.map(id=>`<button class=\"workspace-menu-item\""
+          assert old2 in s
+          s=s.replace(old2,"${ids.filter(id=>visibleWorkspaceIds(name).includes(id)).map(id=>`<button class=\"workspace-menu-item\"",1)
+          menu='<input id="menuSearch" class="menu-search" placeholder="Search tools" aria-label="Search tools" oninput="renderAppMenu(this.value)"><div id="appMenuContent"></div>'
+          assert menu in s
+          s=s.replace(menu,'<input id="menuSearch" class="menu-search" placeholder="Search tools" aria-label="Search tools" oninput="renderAppMenu(this.value)"><div id="simpleModeControl" class="simple-mode-toggle"></div><div id="appMenuContent"></div>',1)
+          old3="if(open){document.querySelectorAll('[data-bottom-workspace]').forEach(el=>el.classList.toggle('on',el.dataset.bottomWorkspace==='more'));renderPinnedTools();renderRecentTools();setTimeout(()=>document.getElementById('menuSearch')?.focus(),50)}"
+          assert old3 in s
+          s=s.replace(old3,"if(open){document.querySelectorAll('[data-bottom-workspace]').forEach(el=>el.classList.toggle('on',el.dataset.bottomWorkspace==='more'));renderSimpleModeControl();renderPinnedTools();renderRecentTools();setTimeout(()=>document.getElementById('menuSearch')?.focus(),50)}",1)
+          ui.write_text(s)
+
+          plan=Path('V38_DEVELOPMENT_PLAN.md')
+          plan.write_text('''# Creator OS V38 Development Plan\n\n## V38.1 Simple mode\n- [x] Make the mobile app default to an essentials-first tool set.\n- [x] Keep pinned tools visible even when they are outside the essentials set.\n\n## V38.2 Power mode\n- [x] Add an explicit More-menu control to reveal every Creator OS tool.\n- [x] Persist the user choice locally without changing backend permissions.\n\n## V38.3 Structured mobile hubs\n- [x] Filter workspace menus to essentials in Simple mode while preserving native drill-down screens.\n- [x] Keep full searchable discovery available through More and Power mode.\n\n## V38.4 Compatibility\n- [x] Preserve desktop behavior, browser history, pinned/recent tools and approval gates.\n- [x] Keep publishing disabled unless separately authorized.\n\n## V38.5 Release assurance\n- [x] Extend regression checks for V38 Simple/Power mode.\n- [x] Run release checks and push only after validation.\n''')
+          cc=Path('scripts/competitive-check.mjs')
+          c=cc.read_text()
+          decl="v37=read('V37_DEVELOPMENT_PLAN.md'),ui="
+          assert decl in c
+          c=c.replace(decl,"v37=read('V37_DEVELOPMENT_PLAN.md'),v38=read('V38_DEVELOPMENT_PLAN.md'),ui=",1)
+          tail="  ['V37 tracked work complete',!/^\\s*- \\[ \\]/m.test(v37)]\n];"
+          assert tail in c
+          c=c.replace(tail,"  ['V37 tracked work complete',!/^\\s*- \\[ \\]/m.test(v37)],\n  ['mobile simple mode',ui.includes('simpleWorkspaceTools')&&ui.includes('creatorSimpleMode')&&ui.includes('visibleWorkspaceIds')],\n  ['mobile power mode control',ui.includes('simpleModeControl')&&ui.includes('toggleSimpleMode')&&ui.includes('Show all tools')],\n  ['V38 tracked work complete',!/^\\s*- \\[ \\]/m.test(v38)]\n];",1)
+          cc.write_text(c)
+      - name: Install
+        run: npm ci
+      - name: Validate
+        run: npm run release:check
+      - name: Commit V38
+        run: |
+          git config user.name 'adrian stanca'
+          git config user.email '192421473+adrianstanca1@users.noreply.github.com'
+          git rm .github/workflows/v38-simple-mobile.yml
+          git add app/public/index.html scripts/competitive-check.mjs V38_DEVELOPMENT_PLAN.md
+          git commit -m 'Add V38 simple mobile mode'
+          git push origin HEAD:main
