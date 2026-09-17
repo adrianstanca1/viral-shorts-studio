@@ -1,0 +1,24 @@
+name: Hermes Policy
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'hermes/**'
+      - '.github/workflows/hermes-policy.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hermes/**'
+      - '.github/workflows/hermes-policy.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate Hermes config
+        run: node hermes/validate.mjs
+      - name: Test Hermes approval policy
+        run: node hermes/policy-test.mjs
