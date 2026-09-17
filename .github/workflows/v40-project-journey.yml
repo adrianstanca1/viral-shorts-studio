@@ -1,0 +1,60 @@
+name: V40 Project Journey
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/v40-project-journey.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply V40 project journey
+        shell: python
+        run: |
+          from pathlib import Path
+          ui=Path('app/public/index.html')
+          s=ui.read_text()
+          css=".project-journey{display:grid;gap:10px;margin:12px 0;padding:13px;border:1px solid var(--line);border-radius:15px;background:#fbfcff}.journey-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.journey-step{padding:9px 7px;border-radius:11px;border:1px solid var(--line);background:#fff;text-align:center;font-size:11px;font-weight:900;color:var(--muted)}.journey-step.done{background:#f0fff4;color:#067647;border-color:#abefc6}.journey-step.current{background:var(--soft);color:#5145cd;border-color:#d8d2ff}.journey-step.blocked{background:#fff6f6;color:#b42318;border-color:#fecdca}.journey-next{display:flex;justify-content:space-between;align-items:center;gap:10px}.journey-next button{width:auto;margin:0}.journey-copy b{display:block;margin-bottom:3px}.journey-copy span{font-size:12px;color:var(--muted)}"
+          marker='@media(max-width:950px){'
+          assert marker in s
+          s=s.replace(marker,css+marker,1)
+          show_marker='async function show(id,set=true){if(set)selected=id;const p=await api(\'/api/projects/\'+id);let html=`<h2>${esc(p.topic)}</h2><div class="muted">${p.niche} · ${p.style||\'documentary\'} · ${p.status} · ${p.progress||0}%</div>`;'
+          assert show_marker in s
+          helper="""function projectJourneyState(p){const failed=p.status==='failed',complete=p.status==='complete',ready=!!p.qa?.launchReady,approved=p.publishApproval?.status==='approved';let current=0;if(complete)current=1;if(complete&&ready)current=2;if(complete&&ready&&approved)current=3;const steps=['Generate','Review','Approve','Publish'];const classes=steps.map((_,i)=>failed&&i===0?'blocked':i<current?'done':i===current?'current':'');let title='Generation in progress',copy=`${Number(p.progress||0)}% complete. You can leave this screen and come back later.`,action='';if(failed){title='Generation needs attention';copy=p.recoverability?.reason||p.error||'The project stopped before completion.';if(p.recoverability?.recoverable!==false)action=`<button class=\"secondary\" onclick=\"retryProject('${p.id}')\">Retry project</button>`}else if(complete&&!ready){title='Review quality checks';copy='The video is complete but still needs QA review before approval.'}else if(complete&&ready&&!approved){title='Ready for approval';copy='Quality checks passed. Approve only when you are happy with the final result.';action=`<button onclick=\"approveProject('${p.id}')\">Approve for publishing</button>`}else if(complete&&ready&&approved){title='Ready to publish';copy='Approval is complete. Choose a destination below; external posting remains connector-gated.'}return `<div class=\"project-journey\"><div class=\"journey-steps\">${steps.map((x,i)=>`<div class=\"journey-step ${classes[i]}\">${i+1}. ${x}</div>`).join('')}</div><div class=\"journey-next\"><div class=\"journey-copy\"><b>${esc(title)}</b><span>${esc(copy)}</span></div>${action}</div></div>`}\n"""
+          replacement=helper+show_marker[:-1]+"html+=projectJourneyState(p);"
+          s=s.replace(show_marker,replacement,1)
+          ui.write_text(s)
+
+          plan=Path('V40_DEVELOPMENT_PLAN.md')
+          plan.write_text('''# Creator OS V40 Development Plan\n\n## V40.1 Project journey\n- [x] Add a single Generate → Review → Approve → Publish status panel.\n- [x] Use existing project state instead of duplicating backend logic.\n\n## V40.2 Recovery clarity\n- [x] Show failed-generation recovery context in the same panel.\n- [x] Surface one retry action only when the project is recoverable.\n\n## V40.3 Review and approval\n- [x] Make QA readiness and approval state visible before publishing actions.\n- [x] Preserve the existing owner approval gate and external connector gate.\n\n## V40.4 Mobile usability\n- [x] Keep the project journey compact and touch friendly.\n- [x] Avoid adding new navigation layers.\n\n## V40.5 Release assurance\n- [x] Extend regression checks for the journey panel.\n- [x] Run the full release gate before advancing main.\n''')
+          cc=Path('scripts/competitive-check.mjs')
+          c=cc.read_text()
+          decl="v39=read('V39_DEVELOPMENT_PLAN.md'),ui="
+          assert decl in c
+          c=c.replace(decl,"v39=read('V39_DEVELOPMENT_PLAN.md'),v40=read('V40_DEVELOPMENT_PLAN.md'),ui=",1)
+          tail="  ['V39 tracked work complete',!/^\\s*- \\[ \\]/m.test(v39)]\n];"
+          assert tail in c
+          c=c.replace(tail,"  ['V39 tracked work complete',!/^\\s*- \\[ \\]/m.test(v39)],\n  ['project journey panel',ui.includes('projectJourneyState')&&ui.includes('Generate')&&ui.includes('Review')&&ui.includes('Approve')&&ui.includes('Publish')],\n  ['journey recovery action',ui.includes('Generation needs attention')&&ui.includes('Retry project')],\n  ['V40 tracked work complete',!/^\\s*- \\[ \\]/m.test(v40)]\n];",1)
+          cc.write_text(c)
+      - name: Install
+        run: npm ci
+      - name: Validate
+        run: npm run release:check
+      - name: Commit V40 to branch
+        run: |
+          git config user.name 'adrian stanca'
+          git config user.email '192421473+adrianstanca1@users.noreply.github.com'
+          git rm .github/workflows/v40-project-journey.yml
+          git add app/public/index.html scripts/competitive-check.mjs V40_DEVELOPMENT_PLAN.md
+          git commit -m 'Add V40 project journey panel'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
