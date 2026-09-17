@@ -11,6 +11,8 @@ function dir(root){const d=path.join(root,'provider-jobs');fs.mkdirSync(d,{recur
 function file(root,id){return path.join(dir(root),`${id}.json`)}
 function write(root,record){record.updatedAt=nowIso();const target=file(root,record.id),tmp=`${target}.${process.pid}.tmp`;fs.writeFileSync(tmp,JSON.stringify(record,null,2));fs.renameSync(tmp,target);return record}
 function readAll(root){return fs.readdirSync(dir(root)).filter(x=>x.endsWith('.json')).flatMap(x=>{try{return [JSON.parse(fs.readFileSync(path.join(dir(root),x),'utf8'))]}catch{return []}})}
+function retryExhausted(record){return Number(record.attempts||0)>=Number(record.maxAttempts||3)}
+function markRetryExhausted(record,error='provider retry budget exhausted'){record.status='failed';record.error=String(error).slice(0,500);record.failedReason='retry-exhausted';delete record.workerId;delete record.leaseUntil;return record}
 export function createProviderJob(root,input={}){
   const provider=String(input.provider||'external').toLowerCase();
   if(!allowedProviders.has(provider))throw new Error('unsupported provider');
@@ -20,7 +22,7 @@ export function createProviderJob(root,input={}){
   const id=String(input.jobId||crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,100);
   const kind=String(input.kind||'video').toLowerCase();if(!['image','video'].includes(kind))throw new Error('unsupported job kind');
   const ttlSeconds=clamp(Number(input.ttlSeconds||7200),300,86400),createdAt=nowIso();
-  const record={id,provider,projectId,sceneIndex,assetId:input.assetId?String(input.assetId).slice(0,120):null,targetType:input.assetId?'creator-asset':'project-scene',kind,prompt:String(input.prompt||'').slice(0,4000),verifiedFree:input.verifiedFree===true,status:'pending',priority:clamp(Number(input.priority||0),0,100),attempts:0,createdAt,updatedAt:createdAt,expiresAt:new Date(Date.now()+ttlSeconds*1000).toISOString()};
+  const record={id,provider,projectId,sceneIndex,assetId:input.assetId?String(input.assetId).slice(0,120):null,targetType:input.assetId?'creator-asset':'project-scene',kind,prompt:String(input.prompt||'').slice(0,4000),verifiedFree:input.verifiedFree===true,status:'pending',priority:clamp(Number(input.priority||0),0,100),attempts:0,maxAttempts:clamp(Number(input.maxAttempts||3),1,10),createdAt,updatedAt:createdAt,expiresAt:new Date(Date.now()+ttlSeconds*1000).toISOString()};
   if(!record.verifiedFree)throw new Error('job must be verified free/no-charge');
   return write(root,record);
 }
@@ -28,13 +30,15 @@ export function getProviderJob(root,id){try{return JSON.parse(fs.readFileSync(fi
 export function claimProviderJobs(root,input={}){
   const all=readAll(root);reconcileItems(root,all);
   const provider=String(input.provider||'').toLowerCase(),limit=clamp(Number(input.limit||1),1,8),leaseSeconds=clamp(Number(input.leaseSeconds||120),30,900),workerId=String(input.workerId||'worker').slice(0,80);
-  const jobs=all.filter(x=>x.status==='pending'&&(!provider||x.provider===provider)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(a.createdAt).localeCompare(String(b.createdAt))).slice(0,limit);
+  const jobs=all.filter(x=>x.status==='pending'&&!retryExhausted(x)&&(!provider||x.provider===provider)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(a.createdAt).localeCompare(String(b.createdAt))).slice(0,limit);
   return jobs.map(record=>{record.status='leased';record.workerId=workerId;record.attempts=Number(record.attempts||0)+1;record.leaseUntil=new Date(Date.now()+leaseSeconds*1000).toISOString();return write(root,record)});
 }
 export function releaseProviderJob(root,id,error=''){
   const record=getProviderJob(root,id);if(!record)throw new Error('provider job not found');
   if(record.status!=='leased')throw new Error('only leased jobs can be released');
-  record.status='pending';delete record.workerId;delete record.leaseUntil;if(error)record.lastError=String(error).slice(0,500);return write(root,record);
+  if(error)record.lastError=String(error).slice(0,500);
+  if(retryExhausted(record))return write(root,markRetryExhausted(record,error||'provider retry budget exhausted'));
+  record.status='pending';delete record.workerId;delete record.leaseUntil;return write(root,record);
 }
 export function resolveProviderJob(root,id,input={}){
   const record=getProviderJob(root,id);if(!record)throw new Error('provider job not found');
@@ -50,22 +54,26 @@ export function failProviderJob(root,id,error='provider generation failed'){
 function reconcileItems(root,items){
   const now=Date.now(),changed=[];
   for(const record of items){
-    let migrated=false;if(record.priority===undefined){record.priority=0;migrated=true;}if(record.attempts===undefined){record.attempts=0;migrated=true;}if(!record.expiresAt&&!finalStates.has(record.status)){const base=Date.parse(record.createdAt)||now;record.expiresAt=new Date(base+6*60*60*1000).toISOString();migrated=true;}if(migrated)write(root,record);
+    let migrated=false;if(record.priority===undefined){record.priority=0;migrated=true;}if(record.attempts===undefined){record.attempts=0;migrated=true;}if(record.maxAttempts===undefined){record.maxAttempts=3;migrated=true;}if(!record.expiresAt&&!finalStates.has(record.status)){const base=Date.parse(record.createdAt)||now;record.expiresAt=new Date(base+6*60*60*1000).toISOString();migrated=true;}if(migrated)write(root,record);
     if(finalStates.has(record.status))continue;
     if(record.expiresAt&&Date.parse(record.expiresAt)<=now){record.status='expired';record.error='provider job expired before completion';delete record.workerId;delete record.leaseUntil;write(root,record);changed.push(record);continue;}
-    if(record.status==='leased'&&record.leaseUntil&&Date.parse(record.leaseUntil)<=now){record.status='pending';record.lastError='worker lease expired; returned to queue';delete record.workerId;delete record.leaseUntil;write(root,record);changed.push(record);}
+    if(record.status==='pending'&&retryExhausted(record)){write(root,markRetryExhausted(record));changed.push(record);continue;}
+    if(record.status==='leased'&&record.leaseUntil&&Date.parse(record.leaseUntil)<=now){
+      record.lastError='worker lease expired';
+      if(retryExhausted(record)){write(root,markRetryExhausted(record,'worker lease expired; provider retry budget exhausted'));changed.push(record);continue;}
+      record.status='pending';record.lastError='worker lease expired; returned to queue';delete record.workerId;delete record.leaseUntil;write(root,record);changed.push(record);
+    }
   }
   return changed;
 }
 export function reconcileProviderJobs(root){return reconcileItems(root,readAll(root));}
 export function providerJobsSnapshot(root,filter={}){
-  const all=readAll(root);reconcileItems(root,all);const counts={pending:0,leased:0,ready:0,failed:0,expired:0};for(const x of all)counts[x.status]=(counts[x.status]||0)+1;
-  const jobs=all.filter(x=>(!filter.status||x.status===filter.status)&&(!filter.provider||x.provider===filter.provider)&&(!filter.projectId||x.projectId===filter.projectId)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(b.createdAt).localeCompare(String(a.createdAt)));
-  return {counts,total:all.length,providers:[...new Set(all.map(x=>x.provider))],jobs};
+  const all=readAll(root);reconcileItems(root,all);const refreshed=readAll(root),counts={pending:0,leased:0,ready:0,failed:0,expired:0};for(const x of refreshed)counts[x.status]=(counts[x.status]||0)+1;
+  const jobs=refreshed.filter(x=>(!filter.status||x.status===filter.status)&&(!filter.provider||x.provider===filter.provider)&&(!filter.projectId||x.projectId===filter.projectId)).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0)||String(b.createdAt).localeCompare(String(a.createdAt)));
+  return {counts,total:refreshed.length,providers:[...new Set(refreshed.map(x=>x.provider))],jobs};
 }
 export function listProviderJobs(root,filter={}){return providerJobsSnapshot(root,filter).jobs;}
 export function providerJobStatus(root){const {jobs,...status}=providerJobsSnapshot(root);return status;}
-
 
 export function maintainProviderJobs(root,{projectIds=null,retentionDays=30,now=Date.now}={}){
   const all=readAll(root);reconcileItems(root,all);const hasInventory=Array.isArray(projectIds),valid=new Set(projectIds||[]),cutoff=now()-Math.max(1,Number(retentionDays||30))*86400000;
