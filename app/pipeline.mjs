@@ -149,7 +149,8 @@ async function tavilyResearch(topic){
 
 async function firecrawlResearch(topic){
   const key=process.env.FIRECRAWL_API_KEY;
-  if(!key || process.env.FIREOCRAPE_ENABLED!=='true') return [];
+  const enabled=process.env.FIRECRAWL_ENABLED??process.env.FIREOCRAPE_ENABLED;
+  if(!key || enabled!=='true') return [];
   try{
     const r=await fetch('https://api.firecrawl.dev/v1/search',{
       method:'POST',signal:AbortSignal.timeout(25000),
