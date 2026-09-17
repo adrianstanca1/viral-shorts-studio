@@ -87,23 +87,7 @@ export async function completeText(req){
     if(id==='ollama'&&process.env.OLLAMA_ENABLED!=='false')result=await ollamaLocal(req);
     else if(id==='ollama-cloud'){if(cooling(id))throw new Error('cooldown');try{result=await ollamaCloud(req)}catch(e){if([401,403].includes(e.status))cool(id,30*60*1000);throw e}}
     else if(id==='huggingface'){if(cooling(id))throw new Error('cooldown');try{result=await huggingFaceCloud(req)}catch(e){if([401,402,403,429].includes(e.status))cool(id,30*60*1000);throw e}}
-    else if(id==='openrouter'){if(cooling(id))throw new Error('cooldown');try{
-      const model=process.env.OPENROUTER_MODEL||'openai/gpt-4o-mini';
-      const data=await jsonFetch('https://openrouter.ai/api/v1/chat/completions',{
-        method:'POST',
-        headers:{
-          'Authorization':`Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'Content-Type':'application/json',
-          'HTTP-Referer':'https://cortexbuildpro.tech',
-          'X-Title':'Viral Shorts Studio'
-        },
-        body:JSON.stringify({model,messages:req.messages,max_tokens:tokens(req.target),temperature:.25}),
-        timeout:30000
-      });
-      const text=validateOutput(data.choices?.[0]?.message?.content,req.validate);
-      result={text,provider:'openrouter',model,data.choices?.[0]?.model||model,tier:'openrouter-free'};
-      if([401,403].includes(data.status||0))cool(id,30*60*1000);
-    }catch(e){throw e}}
+    else if(id==='openrouter'&&freeRouter.status().enabled){const text=await freeRouter.complete(req),st=freeRouter.status();result={text,provider:'openrouter',model:st.verifiedModel||st.models?.[0]};}
     else if(id==='nvidia')result=await nvidiaComplete(req);
     else continue;
     const elapsed=Date.now()-started;note(id,req,true,elapsed);rememberModel(id,result.model,req,true,elapsed);return {...result,route:{task:req.task||'general',quality:req.quality||'balanced',order}};
