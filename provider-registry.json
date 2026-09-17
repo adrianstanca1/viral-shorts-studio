@@ -75,27 +75,9 @@
     "generationVerified": true,
     "httpStatus": 200,
     "authentication": "verified",
-    "policy": "enabled-zero-price-only",
+    "policy": "enabled-free-tier",
     "adapter": "viral-shorts-studio/textRouter",
-    "notes": "NEW KEY WORKING — gpt-4o-mini confirmed. 14 free models verified. 445 total models available.",
-    "verifiedModel": "openai/gpt-4o-mini",
-    "models": [
-      "openai/gpt-4o-mini",
-      "meta-llama/llama-3.2-3b-instruct",
-      "inclusionai/ling-3.0-flash-vl:free",
-      "nex-agi/nex-n2.5-mini:free",
-      "nex-agi/nex-n2.5-pro:free",
-      "qwen/qwen3.8-27b:free",
-      "nvidia/nemotron-3.5-lightning:free",
-      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-      "nvidia/nemotron-3-super-120b-a12b:free",
-      "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "nvidia/nemotron-3.5-content-safety:free",
-      "cohere/north-mini-code:free",
-      "dots-studio/dots-3-note-preview:free",
-      "liquid/lfm-2.5-2.6b:free"
-    ],
-    "totalModels": 445
+    "notes": "Working key — gpt-4o-mini confirmed. HTTP-Referer + X-Title headers added. 30min cooldown on 401/403."
   },
   {
     "provider": "huggingface",
