@@ -1,0 +1,117 @@
+name: Production Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: viral-shorts-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Run release gate
+        run: npm run release:check
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+      VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+    steps:
+      - name: Validate deployment credentials
+        run: |
+          set -euo pipefail
+          for name in VPS_HOST VPS_USER VPS_SSH_KEY VPS_KNOWN_HOSTS VPS_APP_DIR; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required production secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy target stack with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}"             "APP_DIR='${VPS_APP_DIR}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$APP_DIR"
+
+          expected_origin='adrianstanca1/viral-shorts-studio'
+          origin="$(git remote get-url origin)"
+          [[ "$origin" == *"$expected_origin"* ]] || {
+            echo "Unexpected git origin: $origin" >&2
+            exit 1
+          }
+
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Production working tree is dirty; refusing deploy." >&2
+            exit 1
+          fi
+
+          previous_sha="$(git rev-parse HEAD)"
+          echo "Rollback point: $previous_sha"
+
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+
+          node hermes/validate.mjs
+          node hermes/policy-test.mjs
+          docker compose config -q
+
+          rollback() {
+            echo "Deployment health failed; rolling back to $previous_sha" >&2
+            git reset --hard "$previous_sha"
+            docker compose build viral-shorts provider-worker
+            docker compose up -d --no-deps viral-shorts provider-worker
+          }
+
+          trap rollback ERR
+
+          docker compose build viral-shorts provider-worker
+          docker compose up -d --no-deps viral-shorts provider-worker
+
+          for attempt in {1..18}; do
+            app_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' viral-shorts-studio 2>/dev/null || true)"
+            worker_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' viral-shorts-provider-worker 2>/dev/null || true)"
+            echo "health attempt $attempt: app=$app_health worker=$worker_health"
+            if [[ "$app_health" == "healthy" && "$worker_health" == "healthy" ]]; then
+              trap - ERR
+              echo "Production deployment healthy."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "Target services did not become healthy in time." >&2
+          false
+          REMOTE
