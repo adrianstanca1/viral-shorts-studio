@@ -26,6 +26,7 @@ import { googleOAuthStatus, googleLoginAuthorized, pairGoogleOwner, saveYouTubeG
 import { saveGoogleOAuthClientAuthenticated } from './google-setup.mjs';
 import { ownerPasswordConfigured, verifyOwnerPassword, setOwnerPassword, createOwnerRecovery, ownerRecoveryStatus, approveOwnerRecovery, completeOwnerRecovery } from './owner-auth.mjs';
 import { sceneCountForDuration, captionWordsForStyle, captionStyleForAspect, chapterPlanForStoryboard, sceneConcurrencyForDuration, narrationRoute, renderProfile } from './pipeline.mjs';
+import { acquireRuntimeLock } from './runtime-lock.mjs';
 import { imageKinds, createImageBrief, createCharacter, getCharacter, getImageAsset, resolveImageAsset, failImageAsset } from './creator-assets.mjs';
 import { readBrandBrain, saveBrandBrain, brandPrompt } from './brand-brain.mjs';
 import { researchPrompt } from './research-studio.mjs';
@@ -168,6 +169,14 @@ const interrupted=recoverProjectState({status:'assembling',progress:90,storyboar
 assert.equal(interrupted.job.status,'queued');assert.equal(interrupted.job.scenes.length,1);assert.equal(interrupted.job.render,undefined);
 
 const {writePhraseCaptions,visualAssetScore,candidateScore,repairTargetIndexes,editingRhythmAnalysis,mediaSearchQueries}=await import('./pipeline.mjs');
+const lockRoot=fs.mkdtempSync(path.join(os.tmpdir(),'studio-lock-'));
+const firstLock=acquireRuntimeLock(lockRoot,{staleMs:60000});
+assert.throws(()=>acquireRuntimeLock(lockRoot,{staleMs:60000}),/already held/);
+firstLock.release();
+const secondLock=acquireRuntimeLock(lockRoot,{staleMs:60000});
+secondLock.release();
+fs.rmSync(lockRoot,{recursive:true,force:true});
+
 const visualScene={beat:'hook',searchQuery:'Great Smog London 1952 streets',overlay:'Great Smog London',narration:'London was covered by deadly smog in 1952.',sourceTitle:'Great Smog of London'};
 assert.ok(visualAssetScore({title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'},visualScene)>visualAssetScore({title:'Generic flag icon',artist:'',license:'CC0',type:'image',source:'https://example.com'},visualScene));
 assert.ok(candidateScore({assets:[{title:'Great Smog in London 1952',artist:'archive',license:'CC BY',type:'image',source:'https://example.com'}],hasRealVideo:false,visualType:'archive-motion'},visualScene)>=50);
