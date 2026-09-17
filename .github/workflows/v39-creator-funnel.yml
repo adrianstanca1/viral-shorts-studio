@@ -1,16 +1,19 @@
 name: V39 Creator Funnel
 on:
-  push:
+  pull_request:
+    branches: [main]
     paths:
       - '.github/workflows/v39-creator-funnel.yml'
 permissions:
   contents: write
 jobs:
   apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -53,11 +56,11 @@ jobs:
         run: npm ci
       - name: Validate
         run: npm run release:check
-      - name: Commit V39
+      - name: Commit V39 to branch
         run: |
           git config user.name 'adrian stanca'
           git config user.email '192421473+adrianstanca1@users.noreply.github.com'
           git rm .github/workflows/v39-creator-funnel.yml
           git add app/public/index.html scripts/competitive-check.mjs V39_DEVELOPMENT_PLAN.md
           git commit -m 'Add V39 task-first creator funnel'
-          git push origin HEAD:main
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
