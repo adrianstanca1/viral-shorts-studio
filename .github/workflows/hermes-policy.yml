@@ -2,14 +2,8 @@ name: Hermes Policy
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'hermes/**'
-      - '.github/workflows/hermes-policy.yml'
   push:
     branches: [main]
-    paths:
-      - 'hermes/**'
-      - '.github/workflows/hermes-policy.yml'
 jobs:
   validate:
     runs-on: ubuntu-latest
