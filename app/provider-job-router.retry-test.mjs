@@ -7,7 +7,7 @@ import { createProviderJob, claimProviderJobs, releaseProviderJob, getProviderJo
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'provider-retry-test-'));
 try{
   const job=createProviderJob(root,{provider:'external',projectId:'p-retry',sceneIndex:1,kind:'video',verifiedFree:true,maxAttempts:2});
-  assert.equal(job.maxAttempts,2);
+  assert.equal(job?.maxAttempts,2);
 
   let claimed=claimProviderJobs(root,{provider:'external',workerId:'w1'});
   assert.equal(claimed.length,1);

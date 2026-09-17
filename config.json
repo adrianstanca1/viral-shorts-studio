@@ -1,0 +1,33 @@
+{
+  "orchestrator": {
+    "mayExecuteDestructiveActions": false
+  },
+  "approvalGates": ["publish.external"],
+  "routing": {
+    "localPreferred": true,
+    "paidFallback": false,
+    "requireProviderHealthCheck": true,
+    "requireVerifiedFreeBeforeUse": true,
+    "circuitBreaker": {
+      "enabled": true
+    }
+  },
+  "deployment": {
+    "allowedStack": "viral-shorts",
+    "denyUnrelatedServiceMutation": true,
+    "requirePreDeployTests": true,
+    "requirePostDeployHealthCheck": true,
+    "requireRollbackPoint": true
+  },
+  "security": {
+    "secretsInRepo": false,
+    "useAuthenticatedGateway": true,
+    "redactSecretsInLogs": true,
+    "publicSecretEndpoints": false,
+    "sandboxWorkers": true,
+    "checkpointBeforeMutation": true
+  },
+  "memory": {
+    "storeSecrets": false
+  }
+}
