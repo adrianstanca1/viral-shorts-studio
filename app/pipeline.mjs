@@ -75,7 +75,7 @@ export function editingRhythmAnalysis(scenes=[],storyboard=[]){
   const repeatableKeys=scene=>new Set((scene?.assets||[]).filter(a=>a?.type!=='whiteboard'&&a?.source!=='local'&&a?.license!=='original').map(assetKey).filter(Boolean));
   for(let i=0;i<scenes.length;i++){const scene=scenes[i]||{},keys=repeatableKeys(scene);
     if(i){const prev=scenes[i-1]||{},prevKeys=repeatableKeys(prev),shared=[...keys].filter(k=>prevKeys.has(k));if(shared.length){adjacentRepeats.push({from:prev.index,to:scene.index,assets:shared.slice(0,3)});repeatRepair.push(scene.index);}}
-    const mode=scene.visualType||'unknown';const firstVisual=[...keys][0]||'';const signature=mode==='archive-motion'?`${mode}:${firstVisual}`:mode;run=signature===lastType?run+1:1;lastType=signature;longestRun=Math.max(longestRun,run);if(run>=4)runRepair.push(scene.index);
+    const mode=scene.visualType||'unknown';const firstVisual=[...keys][0]||'';const signature=mode==='archive-motion'?`${mode}:${firstVisual}`:mode==='whiteboard'?`${mode}:${scene.index}`:mode;run=signature===lastType?run+1:1;lastType=signature;longestRun=Math.max(longestRun,run);if(run>=4)runRepair.push(scene.index);
   }
   const keyBeats=new Set(['hook','evidence','payoff']);const interrupts=storyboard.filter(x=>keyBeats.has(x.beat)).map(plan=>{const scene=scenes.find(s=>s.index===plan.index);return {index:plan.index,beat:plan.beat,visualType:scene?.visualType||'missing',strong:!!scene&&(scene.hasRealVideo||scene.visualType==='whiteboard'||Number(scene.candidateScore||0)>=80)};});
   const strong=interrupts.filter(x=>x.strong).length;const score=Math.max(0,Math.round(100-adjacentRepeats.length*18-Math.max(0,longestRun-3)*12-(interrupts.length?((interrupts.length-strong)/interrupts.length)*25:0)));
