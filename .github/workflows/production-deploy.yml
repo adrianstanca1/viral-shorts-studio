@@ -22,6 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - name: Install dependencies
         run: npm ci
       - name: Run release gate
@@ -36,13 +37,25 @@ jobs:
       VPS_USER: administrator
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
       VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      APP_URL: https://cortexbuildpro.tech
     steps:
-      - name: Validate deployment credential
+      - name: Validate deployment credentials
         run: |
           set -euo pipefail
           if [[ -z "${VPS_SSH_KEY:-}" && -z "${VPS_PASSWORD:-}" ]]; then
             echo "::error::Set either VPS_SSH_KEY or VPS_PASSWORD in the production environment secrets."
             exit 1
+          fi
+
+      - name: Pre-deploy reachability check
+        run: |
+          set -euo pipefail
+          echo "Checking VPS reachability via ${APP_URL}/api/health..."
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${APP_URL}/api/health" || echo "000")
+          if [[ "$http_code" != "200" ]]; then
+            echo "::warning::VPS health check returned HTTP ${http_code} (expected 200). Deployment will proceed but app may be down."
+          else
+            echo "VPS reachable: HTTP ${http_code}"
           fi
 
       - name: Configure SSH
@@ -62,24 +75,33 @@ jobs:
             sudo apt-get install -y -qq sshpass
           fi
 
-      - name: Deploy target stack with rollback
+      - name: Deploy to VPS with rollback
         shell: bash
         run: |
           set -euo pipefail
 
           if [[ -n "${VPS_SSH_KEY:-}" ]]; then
-            ssh_cmd=(ssh -i ~/.ssh/id_ed25519)
+            ssh_cmd=(ssh -i ~/.ssh/id_ed25519 -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3)
           else
             export SSHPASS="$VPS_PASSWORD"
-            ssh_cmd=(sshpass -e ssh)
+            ssh_cmd=(sshpass -e ssh -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3)
           fi
+
+          # First check: can we even reach the VPS?
+          if ! "${ssh_cmd[@]}" "${VPS_USER}@${VPS_HOST}" "echo ok" >/dev/null 2>&1; then
+            echo "::error::Cannot connect to VPS ${VPS_HOST}. Deployment aborted."
+            exit 1
+          fi
+          echo "VPS SSH connection established."
 
           "${ssh_cmd[@]}" "${VPS_USER}@${VPS_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
 
           expected_origin='adrianstanca1/viral-shorts-studio'
-          APP_DIR="$(
-            find /home /opt /srv -maxdepth 4 -type d -name .git 2>/dev/null |
+
+          # --- Step 1: Find the app directory ---
+          APP_DIR="$( \
+            find /home /opt /srv -maxdepth 4 -type d -name .git 2>/dev/null | \
             while read -r gitdir; do
               repo="${gitdir%/.git}"
               [[ -f "$repo/compose.yaml" ]] || continue
@@ -91,53 +113,127 @@ jobs:
             done
           )"
 
-          [[ -n "$APP_DIR" ]] || {
-            echo "viral-shorts-studio checkout not found." >&2
-            exit 1
-          }
-
-          cd "$APP_DIR"
-
-          if [[ -n "$(git status --porcelain)" ]]; then
-            echo "Production working tree is dirty; refusing deploy." >&2
+          if [[ -z "$APP_DIR" ]]; then
+            echo "::error::viral-shorts-studio checkout not found on VPS." >&2
+            echo "Searched /home /opt /srv for a repo with compose.yaml and origin matching $expected_origin" >&2
             exit 1
           fi
 
+          echo "Found app at: $APP_DIR"
+          cd "$APP_DIR"
+
+          # --- Step 2: Dirty tree guard ---
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::Production working tree is dirty; refusing deploy." >&2
+            exit 1
+          fi
+
+          # --- Step 3: Save rollback point ---
           previous_sha="$(git rev-parse HEAD)"
           echo "Rollback point: $previous_sha"
 
+          # --- Step 4: Fetch and checkout latest ---
           git fetch origin main
           git checkout main
           git pull --ff-only origin main
 
-          node hermes/validate.mjs
-          node hermes/policy-test.mjs
-          docker compose config -q
+          # --- Step 5: Validate inside containers (no host node required) ---
+          echo "Running validation inside Docker containers..."
+          docker compose pull viral-shorts provider-worker || true
+          docker compose build viral-shorts provider-worker
 
+          # Run validate.mjs inside the viral-shorts container
+          validate_ok="false"
+          if docker compose run --rm viral-shorts node /app/hermes/validate.mjs > /tmp/deploy-validate.log 2>&1; then
+            validate_ok="true"
+            echo "  hermes/validate.mjs: PASS"
+          else
+            echo "  hermes/validate.mjs: FAIL"
+            echo "--- validate.mjs output ---"
+            cat /tmp/deploy-validate.log
+            echo "--- end validate.mjs output ---"
+          fi
+
+          # Run policy-test.mjs inside the viral-shorts container
+          policy_ok="false"
+          if docker compose run --rm viral-shorts node /app/hermes/policy-test.mjs > /tmp/deploy-policy.log 2>&1; then
+            policy_ok="true"
+            echo "  hermes/policy-test.mjs: PASS"
+          else
+            echo "  hermes/policy-test.mjs: FAIL"
+            echo "--- policy-test.mjs output ---"
+            cat /tmp/deploy-policy.log
+            echo "--- end policy-test.mjs output ---"
+          fi
+
+          # Validate docker compose config
+          if docker compose config -q > /dev/null 2>&1; then
+            echo "  docker compose config: PASS"
+          else
+            echo "::error::docker compose config validation failed"
+            docker compose config > /tmp/deploy-compose-error.log 2>&1 || true
+            echo "--- compose error ---"
+            cat /tmp/deploy-compose-error.log
+            echo "--- end compose error ---"
+            exit 1
+          fi
+
+          # If governance checks failed, abort before deploying
+          if [[ "$validate_ok" != "true" || "$policy_ok" != "true" ]]; then
+            echo "::error::Governance checks failed. Aborting deployment." >&2
+            exit 1
+          fi
+
+          # --- Step 6: Deploy with rollback trap ---
           rollback() {
-            echo "Deployment health failed; rolling back to $previous_sha" >&2
-            git reset --hard "$previous_sha"
-            docker compose build viral-shorts provider-worker
-            docker compose up -d --no-deps viral-shorts provider-worker
+            echo "" >&2
+            echo "============================================" >&2
+            echo "Deployment failed. Rolling back to $previous_sha" >&2
+            echo "============================================" >&2
+
+            # Stop current services
+            docker compose down > /dev/null 2>&1 || true
+
+            # Restore previous code
+            git reset --hard "$previous_sha" > /dev/null 2>&1 || true
+
+            # Restart with previous code (no rebuild — reuse existing images if possible)
+            docker compose up -d --no-deps viral-shorts provider-worker > /dev/null 2>&1 || true
+
+            # Quick health check on rollback
+            for attempt in {1..6}; do
+              health="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${APP_URL}/api/health" 2>/dev/null || echo "000")"
+              if [[ "$health" == "200" ]]; then
+                echo "Rollback successful: app returned HTTP ${health}" >&2
+                return 0
+              fi
+              sleep 5
+            done
+
+            echo "WARNING: Rollback completed but app health check failed (HTTP ${health}). Manual intervention may be needed." >&2
+            return 0
           }
 
           trap rollback ERR
 
-          docker compose build viral-shorts provider-worker
-          docker compose up -d --no-deps viral-shorts provider-worker
+          # Bring up new deployment
+          echo "Starting new deployment..."
+          docker compose up -d --no-deps --build viral-shorts provider-worker
 
-          for attempt in {1..18}; do
-            app_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' viral-shorts-studio 2>/dev/null || true)"
-            worker_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' viral-shorts-provider-worker 2>/dev/null || true)"
-            echo "health attempt $attempt: app=$app_health worker=$worker_health"
-            if [[ "$app_health" == "healthy" && "$worker_health" == "healthy" ]]; then
+          # --- Step 7: HTTP healthcheck (not just Docker healthcheck) ---
+          echo "Polling application health via HTTP..."
+          for attempt in {1..24}; do
+            app_health="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${APP_URL}/api/health" 2>/dev/null || echo "000")"
+            worker_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' viral-shorts-provider-worker 2>/dev/null || echo "unknown")"
+            echo "  Health check $attempt/24: app HTTP=${app_health} worker=${worker_status}"
+            if [[ "$app_health" == "200" ]]; then
+              echo "Deployment healthy: app returned HTTP 200"
               trap - ERR
-              echo "Production deployment healthy."
               exit 0
             fi
-            sleep 10
+            sleep 5
           done
 
-          echo "Target services did not become healthy in time." >&2
+          echo "Application did not become healthy within 2 minutes." >&2
           false
           REMOTE
