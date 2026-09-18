@@ -22,12 +22,15 @@ if [[ -z "$http_code" || "$http_code" == "000" ]]; then
 fi
 
 if [[ -f "$LOG_FILE" ]]; then
-  recent="$(tail -n 250 "$LOG_FILE")"
-  if grep -Eqi 'Invalid Refresh Token|Persisted session invalid|Device code has expired' <<<"$recent"; then
+  recent="$(tail -n 500 "$LOG_FILE")"
+  last_failure_line="$(grep -En 'Invalid Refresh Token|Persisted session invalid|Device code has expired' <<<"$recent" | tail -n 1 | cut -d: -f1 || true)"
+  last_online_line="$(grep -En 'Device marked as online|Device ready:' <<<"$recent" | tail -n 1 | cut -d: -f1 || true)"
+
+  if [[ -n "$last_failure_line" ]] && { [[ -z "$last_online_line" ]] || (( last_failure_line > last_online_line )); }; then
     echo "Desktop Commander requires device re-authorization." >&2
     echo "Restart the service if needed, then approve the fresh device code shown in the service log." >&2
     exit 2
   fi
 fi
 
-echo "Desktop Commander local service and remote endpoint checks passed."
+echo "Desktop Commander local service and current session checks passed."
