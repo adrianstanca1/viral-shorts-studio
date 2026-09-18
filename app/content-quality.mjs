@@ -116,12 +116,15 @@ export function repairNarration(scenes=[],sources=[],topic=''){
   };
   return scenes.map((scene,i)=>{
     const original=clean(scene.narration), prev=clean(scenes[i-1]?.narration||'');
-    const reasons=[]; let candidate=original, sourceIndex=scene.sourceIndex;
-    if(scene.beat==='hook'&&narrationQuality(original,{beat:'hook'})<75)reasons.push('weak-hook');
-    if(scene.beat==='payoff'&&narrationQuality(original,{beat:'payoff'})<75)reasons.push('weak-payoff');
-    if(narrationQuality(original,{beat:scene.beat})<75&&!reasons.length)reasons.push('weak-narration');
-    if(i>0&&overlap(original,prev)>=4)reasons.push('repetitive');
-    if(reasons.length){
+    const quality=narrationQuality(original,{beat:scene.beat});
+    // Only repair if narration is genuinely weak (score < 70) — preserve hand-crafted good narration
+    if(quality < 70){
+      const reasons=[]; let candidate=original, sourceIndex=scene.sourceIndex;
+      if(scene.beat==='hook'&&narrationQuality(original,{beat:'hook'})<75)reasons.push('weak-hook');
+      if(scene.beat==='payoff'&&narrationQuality(original,{beat:'payoff'})<75)reasons.push('weak-payoff');
+      if(narrationQuality(original,{beat:scene.beat})<75&&!reasons.length)reasons.push('weak-narration');
+      if(i>0&&overlap(original,prev)>=4)reasons.push('repetitive');
+      if(reasons.length){
       const options=facts.filter(f=>!used.has(f.text)&&validFact(f)&&overlap(f.text,prev)<4);
       const fact=options.find(f=>Number(f.sourceIndex)===Number(scene.sourceIndex))||options[0];
       if(fact){

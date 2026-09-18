@@ -569,96 +569,103 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     stageMetric(metrics,'researchSeconds',researchStarted);
     update({sources,researchCacheHit,progress:15,status:'storyboarding',metrics});
     const storyboardStarted=nowMs();
-    let storyboard=project.storyboard?.length?project.storyboard:buildStoryboard({...project,sources});
+    let storyboard=project.storyboard?.length?project.storyboard:null;
+    if(!storyboard){
+      storyboard=buildStoryboard({...project,sources});
+    }
     if(project.creatorContext)storyboard=storyboard.map(scene=>({...scene,visualPrompt:`${scene.visualPrompt} | ${project.creatorContext}`.slice(0,2400)}));
     if(!project.storyboard?.length){
       try{
         const count=storyboard.length;
-        const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
-        const strongScript=['true-crime','fact-check'].includes(project.niche),sourceLimit=strongScript?8:6,extractLimit=strongScript?900:560;
-        const compactSources=sources.slice(0,sourceLimit).map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,extractLimit)}));
+        // Skip AI router if storyboard already has narration (hand-crafted)
+        const hasNarration=storyboard.every(s=>typeof s?.narration==='string'&&s.narration.trim().length>=10);
+        if(!hasNarration){
+          const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
+          const strongScript=['true-crime','fact-check'].includes(project.niche),sourceLimit=strongScript?8:6,extractLimit=strongScript?900:560;
+          const compactSources=sources.slice(0,sourceLimit).map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,extractLimit)}));
+        }
 
-        // Sky Gemini cloud model via google-generativeai
-        const skyResult = await (async () => {
+      // Sky Gemini cloud model via google-generativeai
+      const skyResult = await (async () => {
+        try {
+          const genai = await import('google-generativeai');
+          const apiKey = process.env.GOOGLE_API_KEY;
+          if (!apiKey) throw new Error('No GOOGLE_API_KEY');
+          const client = new genai.GenerativeModel('gemini-2.0-flash-exp', {
+            api_key: apiKey,
+            generation_config: { max_output_tokens: count * 200, temperature: 0.7 }
+          });
+          const prompt = JSON.stringify({
+            task: 'storyboard',
+            topic: project.topic,
+            sceneCount: count,
+            sources: compactSources,
+            niche: project.niche,
+            instructions: 'Return ONLY a JSON array of scenes. Each scene: {index, narration (8-420 chars), overlay (max 95 chars), sourceIndex (integer or null), beat}. Use ONLY supplied source facts. No invented allegations, dramatic claims, quotes or citations. Scene 1 = factual curiosity hook. Final scene = why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'
+          });
+          const response = await client.generateContent(prompt);
+          const text = response.text();
+          return { text, provider: 'google-gemini', model: 'gemini-2.0-flash-exp' };
+        } catch (e) {
+          return null;
+        }
+      })();
+
+      if (skyResult) {
+        const text = skyResult.text;
+          const ai = JSON.parse(text).map((x, i) => ({
+          ...x,
+          sourceIndex: Number.isInteger(x.sourceIndex) && sources[x.sourceIndex] ? x.sourceIndex : i % sources.length,
+          narration: String(x.narration || '').trim().slice(0, 420),
+          overlay: String(x.overlay || x.narration || '').trim().slice(0, 95)
+        }));
+        storyboard = storyboard.map((scene, i) => ({ ...scene, ...ai[i] }));
+        update({ scriptProvider: skyResult.provider, scriptModel: skyResult.model, metrics });
+      } else {
+        // Fallback: OpenRouter gpt-4o-mini
+        const openrouterResult = await (async () => {
           try {
-            const genai = await import('google-generativeai');
-            const apiKey = process.env.GOOGLE_API_KEY;
-            if (!apiKey) throw new Error('No GOOGLE_API_KEY');
-            const client = new genai.GenerativeModel('gemini-2.0-flash-exp', {
-              api_key: apiKey,
-              generation_config: { max_output_tokens: count * 200, temperature: 0.7 }
+            const openai = await import('openai');
+            const key = process.env.OPENROUTER_API_KEY;
+            if (!key) throw new Error('No OPENROUTER_API_KEY');
+            const client = new openai.OpenAI({
+              baseURL: 'https://openrouter.ai/api/v1',
+              apiKey: key
             });
-            const prompt = JSON.stringify({
-              task: 'storyboard',
-              topic: project.topic,
-              sceneCount: count,
-              sources: compactSources,
-              niche: project.niche,
-              instructions: 'Return ONLY a JSON array of scenes. Each scene: {index, narration (8-420 chars), overlay (max 95 chars), sourceIndex (integer or null), beat}. Use ONLY supplied source facts. No invented allegations, dramatic claims, quotes or citations. Scene 1 = factual curiosity hook. Final scene = why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'
+            const completion = await client.chat.completions.create({
+              model: 'openai/gpt-4o-mini',
+              messages: [
+                { role: 'system', content: 'Return ONLY a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. For 30-second videos keep each narration 8-12 words; otherwise 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.' },
+                { role: 'user', content: JSON.stringify({ topic: project.topic, sceneCount: count, sources: compactSources }) }
+              ],
+              max_tokens: count * 150,
+              temperature: 0.7,
+              response_format: { type: 'json_object' }
             });
-            const response = await client.generateContent(prompt);
-            const text = response.text();
-            return { text, provider: 'google-gemini', model: 'gemini-2.0-flash-exp' };
-          } catch (e) {
-            return null;
-          }
-        })();
-
-        if (skyResult) {
-          const text = skyResult.text;
-          const ai = JSON.parse(text).map((x, i) => ({
-            ...x,
-            sourceIndex: Number.isInteger(x.sourceIndex) && sources[x.sourceIndex] ? x.sourceIndex : i % sources.length,
-            narration: String(x.narration || '').trim().slice(0, 420),
-            overlay: String(x.overlay || x.narration || '').trim().slice(0, 95)
-          }));
-          storyboard = storyboard.map((scene, i) => ({ ...scene, ...ai[i] }));
-          update({ scriptProvider: skyResult.provider, scriptModel: skyResult.model, metrics });
-        } else {
-          // Fallback: OpenRouter gpt-4o-mini
-          const openrouterResult = await (async () => {
-            try {
-              const openai = await import('openai');
-              const key = process.env.OPENROUTER_API_KEY;
-              if (!key) throw new Error('No OPENROUTER_API_KEY');
-              const client = new openai.OpenAI({
-                baseURL: 'https://openrouter.ai/api/v1',
-                apiKey: key
-              });
-              const completion = await client.chat.completions.create({
-                model: 'openai/gpt-4o-mini',
-                messages: [
-                  { role: 'system', content: 'Return ONLY a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. For 30-second videos keep each narration 8-12 words; otherwise 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.' },
-                  { role: 'user', content: JSON.stringify({ topic: project.topic, sceneCount: count, sources: compactSources }) }
-                ],
-                max_tokens: count * 150,
-                temperature: 0.7,
-                response_format: { type: 'json_object' }
-              });
-              const text = completion.choices[0].message.content;
-          const ai = JSON.parse(text).map((x, i) => ({
-            ...x,
-            sourceIndex: Number.isInteger(x.sourceIndex) && sources[x.sourceIndex] ? x.sourceIndex : i % sources.length,
-            narration: String(x.narration || '').trim().slice(0, 420),
-            overlay: String(x.overlay || x.narration || '').trim().slice(0, 95)
+            const text = completion.choices[0].message.content;
+        const ai = JSON.parse(text).map((x, i) => ({
+          ...x,
+          sourceIndex: Number.isInteger(x.sourceIndex) && sources[x.sourceIndex] ? x.sourceIndex : i % sources.length,
+          narration: String(x.narration || '').trim().slice(0, 420),
+          overlay: String(x.overlay || x.narration || '').trim().slice(0, 95)
           }));
           storyboard = storyboard.map((scene, i) => ({ ...scene, ...ai[i] }));
           update({ scriptProvider: 'openrouter', scriptModel: 'openai/gpt-4o-mini', metrics });
           return true;
-            } catch (e) {
-              return false;
-            }
-          })();
-
-          if (!openrouterResult) {
-            // Final fallback: source extracts
-            const reason = (error?.failures || []).map(x => `${x.id}:${x.error}`).join('; ').slice(0, 240);
-            update({ scriptProvider: 'source-extracts', providerWarning: reason ? `AI router unavailable (${reason}); using cited source excerpts.` : 'AI router unavailable; using cited source excerpts.' });
+          } catch (e) {
+            return false;
           }
+        })();
+
+        if (!openrouterResult) {
+          // Final fallback: source extracts
+          const reason = (error?.failures || []).map(x => `${x.id}:${x.error}`).join('; ').slice(0, 240);
+          update({ scriptProvider: 'source-extracts', providerWarning: reason ? `AI router unavailable (${reason}); using cited source excerpts.` : 'AI router unavailable; using cited source excerpts.' });
         }
+      }
       }catch(error){
-        const reason=(error?.failures||[]).map(x=>`${x.id}:${x.error}`).join('; ').slice(0,240);
-        update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
+      const reason=(error?.failures||[]).map(x=>`${x.id}:${x.error}`).join('; ').slice(0,240);
+      update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});
       }
     }
     storyboard=repairNarration(storyboard,sources,project.topic);
@@ -678,8 +685,8 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       const images=[...await commonsImages(project.topic,24).catch(()=>[])];
       const sourceTitles=[...new Set(sources.map(x=>cleanText(x.title)).filter(Boolean))].slice(0,4);
       for(const title of sourceTitles){
-        if(images.length>=18)break;
-        images.push(...await commonsImages(title,8).catch(()=>[]));
+      if(images.length>=18)break;
+      images.push(...await commonsImages(title,8).catch(()=>[]));
       }
       const uniqueImages=[...new Map(images.filter(x=>x?.url).map(x=>[x.url,x])).values()];
       const videos=await commonsVideos(project.topic,8).catch(()=>[]);
@@ -709,15 +716,15 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       if(!pack)throw last;
       let acceptance=sceneAcceptance(pack.selected?.candidateScore,scene.beat);
       if(!acceptance.accepted&&count===1&&scene.style!=='whiteboard'){
-        try{const retry=await makeSceneCandidates({...scene,variantSeed:Number(scene.variantSeed||0)+7},dir,project.topic,mediaPool,videoPool,2);if((retry.selected?.candidateScore||0)>(pack.selected?.candidateScore||0))pack=retry;}catch{}
-        acceptance=sceneAcceptance(pack.selected?.candidateScore,scene.beat);
+      try{const retry=await makeSceneCandidates({...scene,variantSeed:Number(scene.variantSeed||0)+7},dir,project.topic,mediaPool,videoPool,2);if((retry.selected?.candidateScore||0)>(pack.selected?.candidateScore||0))pack=retry;}catch{}
+      acceptance=sceneAcceptance(pack.selected?.candidateScore,scene.beat);
       }
       pack.selected.qualityGate=acceptance;
       if(pack.candidates.length>1){
-        project.sceneVariants ||= {}; project.sceneVariants[String(scene.index)] ||= [];
-        const archived=pack.candidates.map(c=>({id:crypto.randomUUID(),index:scene.index,createdAt:new Date().toISOString(),variantSeed:Number(c.variantSeed||0),duration:c.duration,assets:c.assets||[],hasRealVideo:!!c.hasRealVideo,visualType:c.visualType||'unknown',file:c.file,captions:c.captions,candidateScore:c.candidateScore,aiProvider:c.aiProvider,aiJobId:c.aiJobId,autoGenerated:true}));
-        project.sceneVariants[String(scene.index)].push(...archived);
-        const selectedMeta=archived.find(v=>v.file===pack.selected.file); if(selectedMeta)pack.selected.variantId=selectedMeta.id;
+      project.sceneVariants ||= {}; project.sceneVariants[String(scene.index)] ||= [];
+      const archived=pack.candidates.map(c=>({id:crypto.randomUUID(),index:scene.index,createdAt:new Date().toISOString(),variantSeed:Number(c.variantSeed||0),duration:c.duration,assets:c.assets||[],hasRealVideo:!!c.hasRealVideo,visualType:c.visualType||'unknown',file:c.file,captions:c.captions,candidateScore:c.candidateScore,aiProvider:c.aiProvider,aiJobId:c.aiJobId,autoGenerated:true}));
+      project.sceneVariants[String(scene.index)].push(...archived);
+      const selectedMeta=archived.find(v=>v.file===pack.selected.file); if(selectedMeta)pack.selected.variantId=selectedMeta.id;
       }
       return pack.selected;
     };
@@ -732,12 +739,12 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       const pos=scenes.findIndex(s=>s.index===index), original=scenes[pos], plan=storyboard.find(s=>s.index===index);
       if(pos<0||!original||!plan)continue;
       try{
-        const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+17};
-        const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);
-        const before=Number(original.candidateScore||0), after=Number(retry.selected?.candidateScore||0);
-        const improved=after>before;
-        autoRepairs.push({index,beforeScore:before,afterScore:after,improved,reason:sceneAcceptance(before,plan.beat).accepted?'retention-risk':'quality-gate'});
-        if(improved){retry.selected.qualityGate=sceneAcceptance(after,plan.beat);scenes[pos]=retry.selected;}
+      const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+17};
+      const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);
+      const before=Number(original.candidateScore||0), after=Number(retry.selected?.candidateScore||0);
+      const improved=after>before;
+      autoRepairs.push({index,beforeScore:before,afterScore:after,improved,reason:sceneAcceptance(before,plan.beat).accepted?'retention-risk':'quality-gate'});
+      if(improved){retry.selected.qualityGate=sceneAcceptance(after,plan.beat);scenes[pos]=retry.selected;}
       }catch(error){autoRepairs.push({index,beforeScore:Number(original.candidateScore||0),improved:false,error:String(error?.message||error).slice(0,180)});}
     }
     let editingRhythm=editingRhythmAnalysis(scenes,storyboard);const editRepairs=[],attemptedEditRepairs=new Set();
@@ -746,21 +753,21 @@ export async function produceProject(project,root,onUpdate=()=>{}){
       const pos=scenes.findIndex(s=>s.index===index),original=scenes[pos],plan=storyboard.find(s=>s.index===index);if(pos<0||!original||!plan)continue;
       const neighborAssets=[...(scenes[pos-1]?.assets||[]),...(scenes[pos+1]?.assets||[])].map(assetKey).filter(Boolean);
       try{
-        const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+29+pass,avoidAssetKeys:neighborAssets};
-        const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);
-        const options=[retry.selected];
-        if(plan.style!=='whiteboard'&&!['hook','payoff'].includes(plan.beat)){
-          try{const wb=await makeSceneCandidates({...retryScene,style:'whiteboard'},dir,project.topic,mediaPool,videoPool,1);if(wb.selected)options.push(wb.selected);}catch{}
-        }
-        let best=null;
-        for(const candidate of options.filter(Boolean)){
-          const gate=sceneAcceptance(candidate.candidateScore,plan.beat),trial=[...scenes];trial[pos]=candidate;const trialRhythm=editingRhythmAnalysis(trial,storyboard);
-          if(!gate.accepted)continue;
-          if(!best||trialRhythm.score>best.rhythm.score||(trialRhythm.score===best.rhythm.score&&Number(candidate.candidateScore||0)>Number(best.candidate.candidateScore||0)))best={candidate,gate,rhythm:trialRhythm};
-        }
-        const improved=!!best&&best.rhythm.score>editingRhythm.score;
-        editRepairs.push({index,pass:pass+1,beforeScore:editingRhythm.score,afterScore:best?.rhythm.score??editingRhythm.score,beforeVisual:Number(original.candidateScore||0),afterVisual:Number(best?.candidate?.candidateScore||0),afterType:best?.candidate?.visualType||null,improved,reason:'editing-rhythm'});
-        if(improved){best.candidate.qualityGate=best.gate;scenes[pos]=best.candidate;editingRhythm=best.rhythm;}
+      const retryScene={...plan,variantSeed:Number(plan.variantSeed||0)+29+pass,avoidAssetKeys:neighborAssets};
+      const retry=await makeSceneCandidates(retryScene,dir,project.topic,mediaPool,videoPool,2);
+      const options=[retry.selected];
+      if(plan.style!=='whiteboard'&&!['hook','payoff'].includes(plan.beat)){
+        try{const wb=await makeSceneCandidates({...retryScene,style:'whiteboard'},dir,project.topic,mediaPool,videoPool,1);if(wb.selected)options.push(wb.selected);}catch{}
+      }
+      let best=null;
+      for(const candidate of options.filter(Boolean)){
+        const gate=sceneAcceptance(candidate.candidateScore,plan.beat),trial=[...scenes];trial[pos]=candidate;const trialRhythm=editingRhythmAnalysis(trial,storyboard);
+        if(!gate.accepted)continue;
+        if(!best||trialRhythm.score>best.rhythm.score||(trialRhythm.score===best.rhythm.score&&Number(candidate.candidateScore||0)>Number(best.candidate.candidateScore||0)))best={candidate,gate,rhythm:trialRhythm};
+      }
+      const improved=!!best&&best.rhythm.score>editingRhythm.score;
+      editRepairs.push({index,pass:pass+1,beforeScore:editingRhythm.score,afterScore:best?.rhythm.score??editingRhythm.score,beforeVisual:Number(original.candidateScore||0),afterVisual:Number(best?.candidate?.candidateScore||0),afterType:best?.candidate?.visualType||null,improved,reason:'editing-rhythm'});
+      if(improved){best.candidate.qualityGate=best.gate;scenes[pos]=best.candidate;editingRhythm=best.rhythm;}
       }catch(error){editRepairs.push({index,pass:pass+1,beforeScore:editingRhythm.score,improved:false,error:String(error?.message||error).slice(0,180)});}
     }
     update({scenes:[...scenes].sort((a,b)=>a.index-b.index),autoRepairs,editRepairs,editingRhythm});
