@@ -504,9 +504,9 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
     catch(error){breakerFailure('wikimedia-video',error);motionVideo=null;await makeImageClip(downloaded[0].local,c1,half,true,scene.aspect);}
   }else await makeImageClip(downloaded[0].local,c1,half,true,scene.aspect);
   await makeImageClip(downloaded[motionVideo?0:1].local,c2,half,false,scene.aspect);
-  const list=path.join(sceneDir,'clips.txt');
+  const list=path.join(sceneDir,`clips-${crypto.randomUUID().slice(0,8)}.txt`);
   fs.writeFileSync(list,`file '${c1}'\nfile '${c2}'\n`);
-  const silent=path.join(sceneDir,'silent.mp4');
+  const silent=path.join(sceneDir,`silent-${crypto.randomUUID().slice(0,8)}.mp4`);
   await run('ffmpeg',['-y','-f','concat','-safe','0','-i',list,'-c','copy',silent]);
   const overlayFile=path.join(sceneDir,'overlay.txt');
   fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
