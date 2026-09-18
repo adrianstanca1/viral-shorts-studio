@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root=path.resolve(process.env.SHOWCASE_ROOT||'./data/showcase');
+const projectsRoot=process.env.SHOWCASE_PROJECTS_ROOT?path.resolve(process.env.SHOWCASE_PROJECTS_ROOT):null;
 const outDir=path.resolve(process.env.SHOWCASE_REEL_DIR||path.join(root,'reel'));
 const ffmpeg=process.env.FFMPEG_BIN||'ffmpeg';
 const font=process.env.SHOWCASE_FONT||'/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
@@ -10,10 +11,10 @@ const segmentSeconds=Math.max(6,Math.min(15,Number(process.env.SHOWCASE_SEGMENT_
 const width=1280,height=720,fps=25;
 
 const picks=[
-  {id:'documentary-great-train-robbery',label:'DOCUMENTARY  ·  True Crime',start:0},
-  {id:'cinematic-mars',label:'CINEMATIC  ·  Storytelling',start:5},
-  {id:'hybrid-heat-pump',label:'HYBRID  ·  Visual Explainer',start:6},
-  {id:'whiteboard-rainscreen',label:'WHITEBOARD  ·  Technical Education',start:4}
+  {id:process.env.SHOWCASE_DOCUMENTARY_ID||'documentary-great-train-robbery',label:'DOCUMENTARY  ·  True Crime',start:0},
+  {id:process.env.SHOWCASE_CINEMATIC_ID||'cinematic-mars',label:'CINEMATIC  ·  Storytelling',start:5},
+  {id:process.env.SHOWCASE_HYBRID_ID||'hybrid-heat-pump',label:'HYBRID  ·  Visual Explainer',start:6},
+  {id:process.env.SHOWCASE_WHITEBOARD_ID||'whiteboard-rainscreen',label:'WHITEBOARD  ·  Technical Education',start:4}
 ];
 
 function run(args){
@@ -21,6 +22,13 @@ function run(args){
   if(r.status!==0)throw new Error((r.stderr||r.stdout||'ffmpeg failed').slice(-2400));
 }
 function projectVideo(id){
+  if(projectsRoot){
+    const metaFile=path.join(projectsRoot,id,'project.json');
+    if(fs.existsSync(metaFile)){
+      const project=JSON.parse(fs.readFileSync(metaFile,'utf8')), file=project?.render?.file;
+      if(file&&fs.existsSync(file))return file;
+    }
+  }
   const file=path.join(root,'projects',id,'final.mp4');
   if(!fs.existsSync(file))throw new Error(`showcase source missing: ${file}`);
   return file;
