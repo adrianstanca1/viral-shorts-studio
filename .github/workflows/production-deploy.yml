@@ -99,20 +99,19 @@ jobs:
           set -euo pipefail
 
           expected_origin='adrianstanca1/viral-shorts-studio'
+          APP_URL='https://cortexbuildpro.tech'
 
-          # --- Step 1: Find the app directory ---
-          APP_DIR="$( \
-            find /home /opt /srv -maxdepth 4 -type d -name .git 2>/dev/null | \
-            while read -r gitdir; do
-              repo="${gitdir%/.git}"
-              [[ -f "$repo/compose.yaml" ]] || continue
-              origin="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
-              if [[ "$origin" == *"$expected_origin"* ]]; then
-                printf '%s\n' "$repo"
-                break
-              fi
-            done
-          )"
+          # --- Step 1: Find the app directory safely under pipefail ---
+          APP_DIR=""
+          while IFS= read -r gitdir; do
+            repo="${gitdir%/.git}"
+            [[ -f "$repo/compose.yaml" ]] || continue
+            origin="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
+            if [[ "$origin" == *"$expected_origin"* ]]; then
+              APP_DIR="$repo"
+              break
+            fi
+          done < <(find /home /opt /srv -maxdepth 4 -type d -name .git 2>/dev/null)
 
           if [[ -z "$APP_DIR" ]]; then
             echo "::error::viral-shorts-studio checkout not found on VPS." >&2
@@ -145,7 +144,7 @@ jobs:
 
           # Run validate.mjs inside the viral-shorts container
           validate_ok="false"
-          if docker compose run --rm viral-shorts node /app/hermes/validate.mjs > /tmp/deploy-validate.log 2>&1; then
+          if docker compose run --rm --no-deps viral-shorts node /app/hermes/validate.mjs > /tmp/deploy-validate.log 2>&1; then
             validate_ok="true"
             echo "  hermes/validate.mjs: PASS"
           else
@@ -157,7 +156,7 @@ jobs:
 
           # Run policy-test.mjs inside the viral-shorts container
           policy_ok="false"
-          if docker compose run --rm viral-shorts node /app/hermes/policy-test.mjs > /tmp/deploy-policy.log 2>&1; then
+          if docker compose run --rm --no-deps viral-shorts node /app/hermes/policy-test.mjs > /tmp/deploy-policy.log 2>&1; then
             policy_ok="true"
             echo "  hermes/policy-test.mjs: PASS"
           else
@@ -192,8 +191,8 @@ jobs:
             echo "Deployment failed. Rolling back to $previous_sha" >&2
             echo "============================================" >&2
 
-            # Stop current services
-            docker compose down > /dev/null 2>&1 || true
+            # Stop only the target services; leave unrelated Compose services untouched.
+            docker compose stop viral-shorts provider-worker > /dev/null 2>&1 || true
 
             # Restore previous code
             git reset --hard "$previous_sha" > /dev/null 2>&1 || true
