@@ -118,9 +118,9 @@ export function repairNarration(scenes=[],sources=[],topic=''){
     const original=clean(scene.narration), prev=clean(scenes[i-1]?.narration||'');
     const quality=narrationQuality(original,{beat:scene.beat});
     // Only repair if narration is genuinely weak (score < 70) — preserve hand-crafted good narration
-    let candidate=original, sourceIndex=scene.sourceIndex;
+    let candidate=original, sourceIndex=scene.sourceIndex, reasons=[];
     if(quality < 70){
-      const reasons=[]; candidate=original;
+      candidate=original;
       if(scene.beat==='hook'&&narrationQuality(original,{beat:'hook'})<75)reasons.push('weak-hook');
       if(scene.beat==='payoff'&&narrationQuality(original,{beat:'payoff'})<75)reasons.push('weak-payoff');
       if(narrationQuality(original,{beat:scene.beat})<75&&!reasons.length)reasons.push('weak-narration');
