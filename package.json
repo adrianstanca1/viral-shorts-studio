@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node app/server.mjs",
     "test": "node app/self-test.mjs && node app/provider-job-router.retry-test.mjs && node app/scene-render-intelligence.test.mjs",
-    "release:check": "bash scripts/release-check.sh"
+    "release:check": "bash scripts/release-check.sh",
+    "showcase:generate": "node scripts/generate-showcase.mjs"
   },
   "dependencies": {
     "express": "^5.1.0"
