@@ -257,8 +257,7 @@ export function buildStoryboard({topic,niche,duration,sources,style='documentary
       index:i+1,beat:beatName,shotType,style,mode,language,aspect,voice,captionStyle,
       narration:clean,
       overlay:(i===0?hook:narration).replace(/\s+/g,' ').slice(0,95),
-      let searchQuery=`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`;
-      let mediaFocus=[searchQuery,`${topic} ${shotType}`,topic,shotType].filter(Boolean).slice(0,4);
+      searchQuery:`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`,
       visualPrompt:style==='whiteboard'?`Clean whiteboard marker illustration explaining ${topic}; simple dark ink strokes on white background, educational diagram feel, no watermark. Scene fact: ${clean}`:`${aspect==='16:9'?'Landscape':aspect==='1:1'?'Square':'Vertical'} ${style} ${shotType} about ${topic}. Historically/contextually accurate, no visible text, ${aspect} composition. Scene fact: ${clean}`,
       motionPrompt:style==='whiteboard'?'progressive hand-drawn ink reveal with readable hold':(i%3===0?'slow cinematic push-in with subtle parallax':i%3===1?'controlled lateral pan with restrained documentary motion':'slow pull-back revealing contextual detail'),
       camera:i%3===0?'slow push in':i%3===1?'gentle pan':'slow zoom out',
