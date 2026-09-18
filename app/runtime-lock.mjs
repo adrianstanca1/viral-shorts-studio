@@ -12,8 +12,8 @@ function processStart(pid){
 }
 function runtimeInstanceId(){return String(process.env.HOSTNAME||os.hostname()||'host').slice(0,160)}
 function ownerAlive(lock,instanceId){
-  if(!lock||!Number.isInteger(Number(lock.pid)))return false;
-  if(lock.instanceId&&lock.instanceId!==instanceId)return false;
+  if(!lock||!lock.instanceId||!Number.isInteger(Number(lock.pid)))return false;
+  if(lock.instanceId!==instanceId)return false;
   try{process.kill(Number(lock.pid),0)}catch(e){if(e?.code==='ESRCH')return false;return e?.code==='EPERM'}
   if(lock.processStart){
     const actual=processStart(Number(lock.pid));
