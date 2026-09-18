@@ -257,7 +257,8 @@ export function buildStoryboard({topic,niche,duration,sources,style='documentary
       index:i+1,beat:beatName,shotType,style,mode,language,aspect,voice,captionStyle,
       narration:clean,
       overlay:(i===0?hook:narration).replace(/\s+/g,' ').slice(0,95),
-      searchQuery:`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`,
+      let searchQuery=`${topic} ${shotType} ${narration.split(' ').slice(0,7).join(' ')}`;
+      let mediaFocus=[searchQuery,`${topic} ${shotType}`,topic,shotType].filter(Boolean).slice(0,4);
       visualPrompt:style==='whiteboard'?`Clean whiteboard marker illustration explaining ${topic}; simple dark ink strokes on white background, educational diagram feel, no watermark. Scene fact: ${clean}`:`${aspect==='16:9'?'Landscape':aspect==='1:1'?'Square':'Vertical'} ${style} ${shotType} about ${topic}. Historically/contextually accurate, no visible text, ${aspect} composition. Scene fact: ${clean}`,
       motionPrompt:style==='whiteboard'?'progressive hand-drawn ink reveal with readable hold':(i%3===0?'slow cinematic push-in with subtle parallax':i%3===1?'controlled lateral pan with restrained documentary motion':'slow pull-back revealing contextual detail'),
       camera:i%3===0?'slow push in':i%3===1?'gentle pan':'slow zoom out',
@@ -458,7 +459,8 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   if(scene.style==='whiteboard') return makeWhiteboardScene(scene,sceneDir,fallbackQuery,sharedNarration);
   const poolStart=Math.max(0,((scene.index-1)*2 + variant*3) % Math.max(1,mediaPool.length));
   const candidates=[...mediaPool.slice(poolStart,poolStart+4)];
-  const queries=mediaSearchQueries(scene,fallbackQuery).slice(0,3);
+  // Use scene-specific media queries if available
+  const queries=scene.mediaQueries||mediaSearchQueries(scene,fallbackQuery).slice(0,3);
   if(candidates.length<12){const batches=await Promise.all(queries.map(query=>commonsImages(`${query}${variant?` variation ${variant}`:''}`,8).catch(()=>[])));for(const batch of batches)candidates.push(...batch);}
   const avoid=new Set((scene.avoidAssetKeys||[]).map(x=>String(x)));
   let unique=[...new Map(candidates.filter(x=>x?.url).map(x=>[x.url,x])).values()].sort((a,b)=>relevanceScore(b,scene)-relevanceScore(a,scene));
@@ -544,14 +546,85 @@ export async function produceProject(project,root,onUpdate=()=>{}){
         const validate=text=>{try{const a=JSON.parse(text);return Array.isArray(a)&&a.length===count&&a.every(x=>typeof x?.narration==='string'&&x.narration.trim().length>=8&&x.narration.length<=420);}catch{return false;}};
         const strongScript=['true-crime','fact-check'].includes(project.niche),sourceLimit=strongScript?8:6,extractLimit=strongScript?900:560;
         const compactSources=sources.slice(0,sourceLimit).map((s,i)=>({index:i,title:s.title,extract:String(s.extract||'').slice(0,extractLimit)}));
-        const scriptStarted=nowMs();
-        const completion=await completeText({task:'storyboard',quality:strongScript?'strong':'balanced',target:count*(strongScript?55:42),validate,messages:[
-          {role:'system',content:'Return only a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. For 30-second videos keep each narration 8-12 words; otherwise 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'},
-          {role:'user',content:JSON.stringify({topic:project.topic,sceneCount:count,sources:compactSources})}
-        ]});
-        const text=completion.text; const ai=JSON.parse(text).map((x,i)=>({...x,sourceIndex:Number.isInteger(x.sourceIndex)&&sources[x.sourceIndex]?x.sourceIndex:i%sources.length,narration:String(x.narration||'').trim().slice(0,420),overlay:String(x.overlay||x.narration||'').trim().slice(0,95)}));storyboard=storyboard.map((scene,i)=>({...scene,...ai[i]}));
-        stageMetric(metrics,'scriptSeconds',scriptStarted);
-        update({scriptProvider:completion.provider,scriptModel:completion.model,metrics});
+
+        // Sky Gemini cloud model via google-generativeai
+        const skyResult = await (async () => {
+          try {
+            const genai = await import('google-generativeai');
+            const apiKey = process.env.GOOGLE_API_KEY;
+            if (!apiKey) throw new Error('No GOOGLE_API_KEY');
+            const client = new genai.GenerativeModel('gemini-2.0-flash-exp', {
+              api_key: apiKey,
+              generation_config: { max_output_tokens: count * 200, temperature: 0.7 }
+            });
+            const prompt = JSON.stringify({
+              task: 'storyboard',
+              topic: project.topic,
+              sceneCount: count,
+              sources: compactSources,
+              niche: project.niche,
+              instructions: 'Return ONLY a JSON array of scenes. Each scene: {index, narration (8-420 chars), overlay (max 95 chars), sourceIndex (integer or null), beat}. Use ONLY supplied source facts. No invented allegations, dramatic claims, quotes or citations. Scene 1 = factual curiosity hook. Final scene = why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.'
+            });
+            const response = await client.generateContent(prompt);
+            const text = response.text();
+            return { text, provider: 'google-gemini', model: 'gemini-2.0-flash-exp' };
+          } catch (e) {
+            return null;
+          }
+        })();
+
+        if (skyResult) {
+          const text = skyResult.text;
+          const ai = JSON.parse(text).map((x, i) => ({
+            ...x,
+            sourceIndex: Number.isInteger(x.sourceIndex) && sources[x.sourceIndex] ? x.sourceIndex : i % sources.length,
+            narration: String(x.narration || '').trim().slice(0, 420),
+            overlay: String(x.overlay || x.narration || '').trim().slice(0, 95)
+          }));
+          storyboard = storyboard.map((scene, i) => ({ ...scene, ...ai[i] }));
+          update({ scriptProvider: skyResult.provider, scriptModel: skyResult.model, metrics });
+        } else {
+          // Fallback: OpenRouter gpt-4o-mini
+          const openrouterResult = await (async () => {
+            try {
+              const openai = await import('openai');
+              const key = process.env.OPENROUTER_API_KEY;
+              if (!key) throw new Error('No OPENROUTER_API_KEY');
+              const client = new openai.OpenAI({
+                baseURL: 'https://openrouter.ai/api/v1',
+                apiKey: key
+              });
+              const completion = await client.chat.completions.create({
+                model: 'openai/gpt-4o-mini',
+                messages: [
+                  { role: 'system', content: 'Return ONLY a JSON array of scenes with narration, overlay and sourceIndex (zero-based). Use ONLY supplied source facts. Do not invent allegations, dramatic claims, quotes or citations. For 30-second videos keep each narration 8-12 words; otherwise 8-14 words. Scene 1 must be a factual curiosity hook, not clickbait. The final scene must resolve why the story matters using sourced facts. Avoid vague pronouns and repeated facts. Keep overlay under 72 characters.' },
+                  { role: 'user', content: JSON.stringify({ topic: project.topic, sceneCount: count, sources: compactSources }) }
+                ],
+                max_tokens: count * 150,
+                temperature: 0.7,
+                response_format: { type: 'json_object' }
+              });
+              const text = completion.choices[0].message.content;
+          const ai = JSON.parse(text).map((x, i) => ({
+            ...x,
+            sourceIndex: Number.isInteger(x.sourceIndex) && sources[x.sourceIndex] ? x.sourceIndex : i % sources.length,
+            narration: String(x.narration || '').trim().slice(0, 420),
+            overlay: String(x.overlay || x.narration || '').trim().slice(0, 95)
+          }));
+          storyboard = storyboard.map((scene, i) => ({ ...scene, ...ai[i] }));
+          update({ scriptProvider: 'openrouter', scriptModel: 'openai/gpt-4o-mini', metrics });
+          return true;
+            } catch (e) {
+              return false;
+            }
+          })();
+
+          if (!openrouterResult) {
+            // Final fallback: source extracts
+            const reason = (error?.failures || []).map(x => `${x.id}:${x.error}`).join('; ').slice(0, 240);
+            update({ scriptProvider: 'source-extracts', providerWarning: reason ? `AI router unavailable (${reason}); using cited source excerpts.` : 'AI router unavailable; using cited source excerpts.' });
+          }
+        }
       }catch(error){
         const reason=(error?.failures||[]).map(x=>`${x.id}:${x.error}`).join('; ').slice(0,240);
         update({scriptProvider:'source-extracts',providerWarning:reason?`AI router unavailable (${reason}); using cited source excerpts.`:'AI router unavailable; using cited source excerpts.'});

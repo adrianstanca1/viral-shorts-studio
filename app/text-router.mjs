@@ -31,7 +31,17 @@ const note=(id,req,ok,ms,error='')=>{const x=telemetry.get(id)||{attempts:0,succ
 const cloudTask=req=>req.quality==='strong'||['fact-check','research','reasoning'].includes(req.task);
 const eligible=id=>id==='ollama'?process.env.OLLAMA_ENABLED!=='false':id==='ollama-cloud'?truthy(process.env.OLLAMA_CLOUD_ENABLED)&&!!process.env.OLLAMA_API_KEY:id==='huggingface'?truthy(process.env.HF_CLOUD_ENABLED)&&!!process.env.HF_TOKEN:id==='openrouter'?freeRouter.status().enabled:id==='nvidia'?process.env.NVIDIA_ENABLED==='true'&&!!process.env.NVIDIA_API_KEY:false;
 export function textRoutingPlan(req={}){const configured=String(process.env.TEXT_PROVIDER_ORDER||'ollama,ollama-cloud,huggingface,openrouter,nvidia').split(',').map(x=>x.trim()).filter(Boolean),available=configured.filter(eligible);if(!cloudTask(req))return {mode:'local-first',configured,order:available,scores:Object.fromEntries(available.map(id=>[id,learnedProviderScore(learnedStats(id,req))]))};const local=available.filter(x=>x==='ollama'),cloud=available.filter(x=>x!=='ollama'&&!cooling(x));const index=new Map(configured.map((id,i)=>[id,i])),rank=id=>learnedEligible(learnedStats(id,req))?learnedProviderScore(learnedStats(id,req)):0;cloud.sort((a,b)=>rank(b)-rank(a)||Number(index.get(a)||0)-Number(index.get(b)||0));const order=[...cloud,...local];return {mode:'quality-first-free-cloud',configured,order,scores:Object.fromEntries(order.map(id=>[id,learnedProviderScore(learnedStats(id,req))])),minimumLearningSamples:3};}
-const providerOrder=req=>textRoutingPlan(req).order;
+const providerOrder=req=>{
+  const configured=String(process.env.TEXT_PROVIDER_ORDER||'openrouter,ollama,huggingface,nvidia,ollama-cloud').split(',').map(x=>x.trim()).filter(Boolean);
+  return configured.filter(id=>{
+    if(id==='openrouter')return freeRouter.status().enabled;
+    if(id==='ollama')return process.env.OLLAMA_ENABLED!=='false';
+    if(id==='huggingface')return truthy(process.env.HF_CLOUD_ENABLED)&&!!process.env.HF_TOKEN;
+    if(id==='nvidia')return process.env.NVIDIA_ENABLED==='true'&&!!process.env.NVIDIA_API_KEY;
+    if(id==='ollama-cloud')return truthy(process.env.OLLAMA_CLOUD_ENABLED)&&!!process.env.OLLAMA_API_KEY;
+    return false;
+  });
+};
 async function jsonFetch(url,options={},timeout=45000){
   const r=await fetch(url,{...options,signal:AbortSignal.timeout(timeout)});
   const text=await r.text(); let data={}; try{data=JSON.parse(text)}catch{}
