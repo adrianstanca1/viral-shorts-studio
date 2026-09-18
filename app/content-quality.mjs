@@ -132,6 +132,7 @@ export function repairNarration(scenes=[],sources=[],topic=''){
         const before=narrationQuality(original,{beat:scene.beat}), after=narrationQuality(text,{beat:scene.beat});
         if(after>=before){candidate=text;sourceIndex=fact.sourceIndex;used.add(fact.text);}
       }
+            }
     }
     const before=narrationQuality(original,{beat:scene.beat}), after=narrationQuality(candidate,{beat:scene.beat});
     const changed=candidate!==original&&after>=before;
