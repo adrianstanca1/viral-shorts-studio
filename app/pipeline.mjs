@@ -484,15 +484,6 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
       downloaded.push({...unique[i],local:dest});
     }catch{ try{fs.rmSync(dest,{force:true});}catch{} }
   }
-  if(!downloaded.length){
-    for(let i=0;i<2;i++){
-      const dest=path.join(sceneDir,`card-${i+1}.png`);
-      const {width,height}=dimensionsForAspect(scene.aspect);
-      const text=(i===0?scene.overlay:scene.narration).replace(/[\\':]/g,' ').replace(/\s+/g,' ').slice(0,90);
-      await run('ffmpeg',['-y','-f','lavfi','-i',`color=c=${i===0?'0x0d1117':'0x161b22'}:s=${width}x${height}:d=1`,'-vf',`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${text}':fontcolor=white:fontsize=42:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2`,'-frames:v','1',dest]);
-      downloaded.push({title:`Scene ${scene.index} typography card`,url:'',source:'local',license:'original',artist:'Viral Shorts Studio',type:'generated',local:dest});
-    }
-  }
   // Quality gate: reject clearly wrong-context imagery (mugshots/suspect sketches
   // for victim/location scenes) and fall back to typography cards instead of bad images.
   if(downloaded.length && downloaded.every(a=>!a.url)){
@@ -512,6 +503,16 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
     const isMugshotHeavy=/\b(mugshot|suspect sketch|composite|killer|convicted|criminal|perp|prisoner|jail|serial|sketch)\b/i.test(allTitleText);
     if(best < 10 && isMugshotHeavy){
       downloaded.length=0;
+    }
+  }
+
+if(!downloaded.length){
+    for(let i=0;i<2;i++){
+      const dest=path.join(sceneDir,`card-${i+1}.png`);
+      const {width,height}=dimensionsForAspect(scene.aspect);
+      const text=(i===0?scene.overlay:scene.narration).replace(/[\\':]/g,' ').replace(/\s+/g,' ').slice(0,90);
+      await run('ffmpeg',['-y','-f','lavfi','-i',`color=c=${i===0?'0x0d1117':'0x161b22'}:s=${width}x${height}:d=1`,'-vf',`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${text}':fontcolor=white:fontsize=42:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2`,'-frames:v','1',dest]);
+      downloaded.push({title:`Scene ${scene.index} typography card`,url:'',source:'local',license:'original',artist:'Viral Shorts Studio',type:'generated',local:dest});
     }
   }
 
@@ -815,3 +816,4 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     throw error;
   }
 }
+
