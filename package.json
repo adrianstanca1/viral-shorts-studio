@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node app/server.mjs",
-    "test": "node app/self-test.mjs && node app/provider-job-router.retry-test.mjs",
+    "test": "node app/self-test.mjs && node app/provider-job-router.retry-test.mjs && node app/scene-render-intelligence.test.mjs",
     "release:check": "bash scripts/release-check.sh"
   },
   "dependencies": {
