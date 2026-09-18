@@ -137,7 +137,11 @@ jobs:
           git checkout main
           git pull --ff-only origin main
 
-          # --- Step 5: Validate inside containers (no host node required) ---
+          # --- Step 5: Validate production runtime before touching containers ---
+          echo "Running production runtime preflight..."
+          bash ops/check-production-runtime.sh .env
+
+          # --- Step 6: Validate inside containers (no host node required) ---
           echo "Running validation inside Docker containers..."
           docker compose pull viral-shorts provider-worker || true
           docker compose build viral-shorts provider-worker
@@ -184,7 +188,7 @@ jobs:
             exit 1
           fi
 
-          # --- Step 6: Deploy with rollback trap ---
+          # --- Step 7: Deploy with rollback trap ---
           rollback() {
             echo "" >&2
             echo "============================================" >&2
@@ -220,7 +224,7 @@ jobs:
           echo "Starting new deployment..."
           docker compose up -d --no-deps --build viral-shorts provider-worker
 
-          # --- Step 7: HTTP healthcheck (not just Docker healthcheck) ---
+          # --- Step 8: HTTP healthcheck (not just Docker healthcheck) ---
           echo "Polling application health via HTTP..."
           for attempt in {1..24}; do
             app_health="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${APP_URL}/api/health" 2>/dev/null || echo "000")"
