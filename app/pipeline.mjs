@@ -92,6 +92,14 @@ export function visualAssetScore(asset,scene){
   if(asset.type==='video')score+=scene.beat==='hook'||scene.beat==='payoff'?8:4;
   if(genericVisualTerms.test(meta)&&overlap<2)score-=14;
   if(!overlap&&asset.source!=='local')score-=10;
+  // Penalize obviously wrong-context imagery: mugshots/suspects/serial-killers
+  // when the scene is about a victim, a location, or a non-suspect fact.
+  const victimContext=/\\b(child|kid|boy|girl|teen|student|young|infant|baby|minor|victim|unidentified|missing|found|body|corpse|remains|box|blanket|cardboard|murder case|murder victim|murdered child)\\b/i.test(scene.narration||scene.overlay||'');
+  const suspectContext=/\\b(suspect|mugshot|convicted|prisoner|jail|criminal|perp\\b|killer|murderer|charged|arrested|police sketch|suspect sketch|composite|dateline|interrogation|lineup|courtroom|defendant|apprehended|caught|wanted|felony|alias)\\b/i.test(meta);
+  if(victimContext && suspectContext && overlap<3) score-=22;
+  // Penalize images clearly about unrelated famous killers when scene is about a specific case
+  const famousKillerTerms=/\\b(samuel little|ted bundy|richard chase| trailside|roy norris|david carpenter|patrick kearney|juan corona|zeus|leonard lake|lawrence bittaker|google|alphabet|meta|facebook|apple|amazon|microsoft|reston|virginia|california|texas|new york)\\b/i.test(meta);
+  if(famousKillerTerms && !wanted.has('killer') && !wanted.has('murder') && !wanted.has('suspect') && overlap<2) score-=18;
   return Math.round(clamp(score,-20,50));
 }
 function relevanceScore(asset,scene){return visualAssetScore(asset,scene);}
@@ -281,7 +289,7 @@ async function commonsImages(query,limit=3){
 async function commonsVideos(query,limit=3){
   if(!query) return [];
   const q=new URLSearchParams({action:'query',generator:'search',gsrnamespace:'6',gsrsearch:`${query} filetype:video`,gsrlimit:String(limit),prop:'videoinfo',viprop:'url|mime|derivatives|extmetadata',format:'json',origin:'*'});
-  const data=await fetchJson(`https://commons.wikimedia.org/w/api.php?${q}`);
+  const data=await fetchJson(`https://commons.wikimedia.org/w/api.php?${q}`,20000);
   return Object.values(data.query?.pages||{}).map(p=>{
     const vi=p.videoinfo?.[0]||{}; const m=vi.extmetadata||{};
     const derivatives=vi.derivatives||[];
@@ -478,13 +486,35 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   }
   if(!downloaded.length){
     for(let i=0;i<2;i++){
-      const dest=path.join(sceneDir,`fallback-${i+1}.png`);
+      const dest=path.join(sceneDir,`card-${i+1}.png`);
       const {width,height}=dimensionsForAspect(scene.aspect);
       const text=(i===0?scene.overlay:scene.narration).replace(/[\\':]/g,' ').replace(/\s+/g,' ').slice(0,90);
-      await run('ffmpeg',['-y','-f','lavfi','-i',`color=c=${i===0?'0x10131a':'0x251b12'}:s=${width}x${height}:d=1`,'-vf',`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${text}':fontcolor=white:fontsize=40:borderw=3:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2`,'-frames:v','1',dest]);
-      downloaded.push({title:'Generated fallback card',url:'',source:'local',license:'original',artist:'Viral Shorts Studio',type:'generated',local:dest});
+      await run('ffmpeg',['-y','-f','lavfi','-i',`color=c=${i===0?'0x0d1117':'0x161b22'}:s=${width}x${height}:d=1`,'-vf',`drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${text}':fontcolor=white:fontsize=42:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2`,'-frames:v','1',dest]);
+      downloaded.push({title:`Scene ${scene.index} typography card`,url:'',source:'local',license:'original',artist:'Viral Shorts Studio',type:'generated',local:dest});
     }
   }
+  // Quality gate: reject clearly wrong-context imagery (mugshots/suspect sketches
+  // for victim/location scenes) and fall back to typography cards instead of bad images.
+  if(downloaded.length && downloaded.every(a=>!a.url)){
+    const scores=downloaded.map(a=>visualAssetScore(a,scene));
+    const best=Math.max(...scores), worst=Math.min(...scores);
+    const allTitleText=downloaded.map(a=>String(a.title||'')).join(' ');
+    const isMugshotHeavy=/\b(mugshot|suspect sketch|composite|killer|convicted|criminal|perp|prisoner|jail|serial|sketch)\b/i.test(allTitleText);
+    if(worst < 8 && best < 18 && isMugshotHeavy){
+      downloaded.length=0;
+    }
+  }
+  // Also reject if ALL downloaded images are clearly wrong-context even with URLs
+  if(downloaded.length){
+    const scores=downloaded.map(a=>visualAssetScore(a,scene));
+    const best=Math.max(...scores);
+    const allTitleText=downloaded.map(a=>String(a.title||'')).join(' ');
+    const isMugshotHeavy=/\b(mugshot|suspect sketch|composite|killer|convicted|criminal|perp|prisoner|jail|serial|sketch)\b/i.test(allTitleText);
+    if(best < 10 && isMugshotHeavy){
+      downloaded.length=0;
+    }
+  }
+
   while(downloaded.length<2) downloaded.push(downloaded[0]);
   let motionVideo=null;
   if(scene.index%2===0 && breakerAvailable('wikimedia-video')){
