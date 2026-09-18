@@ -177,6 +177,9 @@ const checks=[
   ['V39 tracked work complete',!/^\s*- \[ \]/m.test(v39)],
   ['project journey panel',ui.includes('projectJourneyState')&&ui.includes('Generate')&&ui.includes('Review')&&ui.includes('Approve')&&ui.includes('Publish')],
   ['journey recovery action',ui.includes('Generation needs attention')&&ui.includes('Retry project')],
-  ['V40 tracked work complete',!/^\s*- \[ \]/m.test(v40)]
+  ['V40 tracked work complete',!/^\s*- \[ \]/m.test(v40)],
+  ['V41 live generation feedback',ui.includes('pipelineStageInfo')&&ui.includes('liveGenerationPanel')&&ui.includes('scheduleSelectedProjectPoll')],
+  ['V41 contextual mobile CTA',ui.includes('contextActionBar')&&ui.includes('projectContextAction')&&ui.includes('Ready for approval')],
+  ['V41 tracked work complete',!/^\s*- \[ \]/m.test(fs.readFileSync(path.join(root,'V41_DEVELOPMENT_PLAN.md'),'utf8'))]
 ];
 const failed=checks.filter(x=>!x[1]);for(const [name,ok] of checks)console.log(`${ok?'ok':'FAIL'}: ${name}`);if(failed.length)process.exit(1);
