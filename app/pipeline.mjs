@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { writeGenerationQueue, generativeStatus } from './generative-router.mjs';
 import { listAiCandidates } from './ai-candidate-router.mjs';
 import { rankSources, rankFacts, selectNarrativeFacts, narrativeArcAnalysis, repairNarrativeArc, narrationQuality, sceneAcceptance, retentionAnalysis, fitNarrationBudget, optimizePacing, repairNarration } from './content-quality.mjs';
+import { professionalFinishingProfile, finishingSummary } from './professional-finishing.mjs';
 
 const UA = 'ViralShortsStudio/0.2 (self-hosted creator tool)';
 const mediaBreakers=new Map();
@@ -48,7 +49,7 @@ export function writePhraseCaptions(file,text,duration,{wordsPerCue=4}={}){
 const captionStyles={bold:{size:20,bold:1,outline:3,shadow:1},minimal:{size:18,bold:0,outline:2,shadow:0},documentary:{size:19,bold:1,outline:2,shadow:1}};
 export function captionStyleForAspect(style='bold',aspect='9:16'){const base=captionStyles[style]||captionStyles.bold,land=aspect==='16:9',square=aspect==='1:1',size=land?Math.max(14,base.size-3):square?Math.max(16,base.size-1):base.size,margin=land?44:square?70:style==='bold'?110:style==='minimal'?90:95;return `FontName=DejaVu Sans,FontSize=${size},Bold=${base.bold},PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=${base.outline},Shadow=${base.shadow},Alignment=2,MarginV=${margin}`;}
 const captionFilter=(file,style='bold',aspect='9:16')=>`subtitles=${file}:force_style='${captionStyleForAspect(style,aspect)}'`;
-function overlayFilter(file,aspect='9:16'){const land=aspect==='16:9',square=aspect==='1:1',size=land?34:square?40:46,y=land?'h*0.70-text_h/2':square?'h*0.68-text_h/2':'h*0.64-text_h/2';return `drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${file}:fontcolor=white:fontsize=${size}:line_spacing=10:borderw=4:bordercolor=black:x=(w-text_w)/2:y=${y}`;}
+export function overlayFilter(file,aspect='9:16',style='documentary'){const land=aspect==='16:9',square=aspect==='1:1';const hybrid=style==='hybrid'||style==='finance',cinematic=style==='cinematic'||style==='space-sci-fi',minimal=cinematic||style==='motivational';const size=land?(hybrid?38:minimal?30:34):square?(hybrid?44:minimal?36:40):(hybrid?52:minimal?40:46),y=land?(hybrid?'h*0.62-text_h/2':'h*0.70-text_h/2'):square?(hybrid?'h*0.60-text_h/2':'h*0.68-text_h/2'):(hybrid?'h*0.56-text_h/2':'h*0.64-text_h/2');const border=hybrid?4:minimal?2:3,box=hybrid?':box=1:boxcolor=black@0.30:boxborderw=14':minimal?':box=1:boxcolor=black@0.20:boxborderw=10':'';return `drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${file}:fontcolor=white:fontsize=${size}:line_spacing=10:borderw=${border}:bordercolor=black@0.75${box}:x=(w-text_w)/2:y=${y}`;}
 export function dimensionsForAspect(aspect='9:16'){return aspect==='16:9'?{width:1280,height:720}:aspect==='1:1'?{width:720,height:720}:{width:720,height:1280}}
 export function renderProfile(env=process.env){const threads=Math.max(1,Math.min(8,Number(env.RENDER_THREADS||4)));return {fps:Math.max(24,Math.min(60,Number(env.VIDEO_FPS||25))),threads,intermediatePreset:String(env.VIDEO_INTERMEDIATE_PRESET||'ultrafast'),intermediateCrf:Math.max(14,Math.min(28,Number(env.VIDEO_INTERMEDIATE_CRF||18))),scenePreset:String(env.VIDEO_PRESET||'veryfast'),sceneCrf:Math.max(16,Math.min(28,Number(env.VIDEO_CRF||20))),audioBitrate:String(env.VIDEO_AUDIO_BITRATE||'160k')};}
 export function aspectMatches(width,height,aspect='9:16'){const d=dimensionsForAspect(aspect);return Math.abs((Number(width)||0)/(Number(height)||1)-d.width/d.height)<0.02}
@@ -418,7 +419,7 @@ async function makeAiImportedScene(scene,sceneDir,ai,sharedNarration=null){
   const overlayFile=path.join(sceneDir,'overlay.txt');fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
-  const draw=overlayFilter(overlayFile,scene.aspect);
+  const draw=overlayFilter(overlayFile,scene.aspect,scene.style);
   const profile=renderProfile();
   await run('ffmpeg',['-y','-i',visual,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-t',String(duration),out]);
   const promptTokens=tokens(ai.prompt||''), wanted=tokens(scene.visualPrompt||scene.searchQuery||''); let overlap=0;for(const t of wanted)if(promptTokens.has(t))overlap++;
@@ -544,7 +545,7 @@ if(!downloaded.length){
   fs.writeFileSync(overlayFile,wrapOverlay(scene.overlay));
   const out=path.join(sceneDir,'scene.mp4');
   const srt=path.join(sceneDir,'captions.srt');writePhraseCaptions(srt,scene.narration,duration,{wordsPerCue:captionWordsForStyle(scene.captionStyle)});
-  const draw=overlayFilter(overlayFile,scene.aspect);
+  const draw=overlayFilter(overlayFile,scene.aspect,scene.style);
   const profile=renderProfile();
   await run('ffmpeg',['-y','-i',silent,'-i',wav,'-vf',`${draw},${captionFilter(srt,scene.captionStyle,scene.aspect)}`,'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-t',String(duration),out]);
   const assets=downloaded.map(({local,...a})=>({...a,file:path.basename(local)}));
@@ -778,12 +779,13 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     const assembled=path.join(dir,'assembled.mp4'), final=path.join(dir,'final.mp4');
     await run('ffmpeg',['-y','-f','concat','-safe','0','-i',concat,'-c','copy','-movflags','+faststart',assembled]);
     const targetDuration=Number(project.duration), assembledDuration=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',assembled]));
-    if(Math.abs(assembledDuration-targetDuration)>.08){
-      const args=['-y','-i',assembled];
-      if(assembledDuration<targetDuration){const pad=Math.max(.05,targetDuration-assembledDuration);args.push('-vf',`tpad=stop_mode=clone:stop_duration=${pad.toFixed(3)}`,'-af',`apad=pad_dur=${pad.toFixed(3)}`);}
-      const profile=renderProfile();args.push('-t',String(targetDuration),'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-movflags','+faststart',final);
-      await run('ffmpeg',args);
-    }else fs.renameSync(assembled,final);
+    const finishing=professionalFinishingProfile({style:project.style||'documentary',duration:targetDuration,aspect:project.aspect||'9:16'});
+    const videoFilters=[],audioFilters=[];
+    if(assembledDuration<targetDuration-.08){const pad=Math.max(.05,targetDuration-assembledDuration);videoFilters.push(`tpad=stop_mode=clone:stop_duration=${pad.toFixed(3)}`);audioFilters.push(`apad=pad_dur=${pad.toFixed(3)}`);}
+    videoFilters.push(finishing.videoFilter);audioFilters.push(finishing.audioFilter);
+    const profile=renderProfile();
+    await run('ffmpeg',['-y','-i',assembled,'-vf',videoFilters.join(','),'-af',audioFilters.join(','),'-t',String(targetDuration),'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-movflags','+faststart',final]);
+    project.professionalFinishing=finishingSummary(finishing);
     try{fs.rmSync(assembled,{force:true});}catch{}
     const credits=path.join(dir,'credits.json');
     saveJson(credits,{sources,assets:scenes.flatMap(s=>s.assets)});
