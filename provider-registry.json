@@ -1,165 +1,154 @@
 [
   {
+    "credentialVariable": "PARALLEL_API_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
     "provider": "tavily",
     "credentialVariable": "TAVILY_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
+    "checkedAt": "2026-09-18T00:58:49.924519+00:00",
     "enabled": true,
     "generationVerified": false,
     "httpStatus": 200,
     "authentication": "verified",
     "policy": "enabled-free-tier-research-only",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers",
     "adapter": "viral-shorts-studio/researchTopic",
-    "notes": "Working - research only"
+    "note": "Verified working \u2014 search API returns results."
+  },
+  {
+    "credentialVariable": "FAL_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   },
   {
     "provider": "firecrawl",
     "credentialVariable": "FIRECRAWL_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": true,
-    "generationVerified": false,
-    "httpStatus": 200,
-    "authentication": "verified",
-    "policy": "enabled-free-tier-web-scraping",
-    "adapter": "viral-shorts-studio/researchTopic",
-    "notes": "Working on api.firecrawl.dev, requires Firecrawl-Api-Key header (not Authorization)"
-  },
-  {
-    "provider": "brave",
-    "credentialVariable": "BRAVE_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": true,
-    "generationVerified": false,
-    "httpStatus": 200,
-    "authentication": "verified",
-    "policy": "enabled-free-tier-search",
-    "adapter": "viral-shorts-studio/researchTopic",
-    "notes": "Working - requires X-Subscription-Token header (not Authorization: Bearer)"
-  },
-  {
-    "provider": "vercel",
-    "credentialVariable": "VERCEL_TOKEN",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
+    "checkedAt": "2026-09-14T07:34:45.660817+00:00",
     "enabled": false,
     "generationVerified": false,
     "httpStatus": 200,
     "authentication": "verified",
-    "policy": "enabled-account-access-only",
-    "notes": "Auth works (account: adrianstanca1) - deployment config tool, no runtime generation role"
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "credentialVariable": "THINKER_API_KEY",
+    "authentication": "not-tested",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "credentialVariable": "NVIDIA_API_KEY",
+    "authentication": "verified",
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-until-zero-cost-generation-is-explicitly-verified",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers",
+    "provider": "nvidia",
+    "httpStatus": 200,
+    "checkedAt": "2026-09-14T11:49:25.773763+00:00"
   },
   {
     "provider": "sendgrid",
     "credentialVariable": "SENDGRID_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
+    "checkedAt": "2026-09-14T07:34:46.065847+00:00",
     "enabled": false,
     "generationVerified": false,
-    "httpStatus": 400,
+    "httpStatus": 200,
     "authentication": "verified",
-    "policy": "disabled-pending-usage-verification",
-    "notes": "Auth works - /v3/stats endpoint requires start_date/end_date parameters"
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   },
   {
-    "credentialVariable": "PARALLEL_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": false,
+    "credentialVariable": "OLLAMA_API_KEY",
+    "authentication": "not-tested",
     "generationVerified": false,
-    "httpStatus": 401,
-    "authentication": "rejected",
-    "policy": "disabled-product-unavailable",
-    "notes": "Product unavailable to this credential (error code 7)"
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   },
   {
     "provider": "openrouter",
     "credentialVariable": "OPENROUTER_API_KEY",
-    "checkedAt": "2026-09-17T23:15:00.000000+00:00",
+    "checkedAt": "2026-09-18T00:58:49.924519+00:00",
     "enabled": true,
     "generationVerified": true,
     "httpStatus": 200,
-    "authentication": "verified",
-    "policy": "enabled-free-tier",
-    "adapter": "viral-shorts-studio/textRouter",
-    "notes": "Working key — gpt-4o-mini confirmed. HTTP-Referer + X-Title headers added. 30min cooldown on 401/403."
+    "authentication": "valid",
+    "policy": "disabled-authentication-rejected-zero-price-only",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers",
+    "free_tier_verified": true,
+    "note": "New key works (sk-or-v1-...cfce). 14 free models including gpt-4o-mini, Gemini 2.0 Flash, Mistral Small 3.1. Replaced expired key."
   },
   {
-    "provider": "huggingface",
-    "credentialVariable": "HF_TOKEN",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": false,
+    "credentialVariable": "BRAVE_API_KEY",
+    "authentication": "not-tested",
     "generationVerified": false,
-    "httpStatus": 402,
-    "authentication": "rejected",
-    "policy": "disabled-credits-depleted",
-    "notes": "Monthly free credits depleted (402). whoami returned 404 confirming token invalid. Need new token + credits."
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   },
   {
     "provider": "xai",
     "credentialVariable": "XAI_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
+    "checkedAt": "2026-09-14T07:34:45.725314+00:00",
     "enabled": false,
     "generationVerified": false,
-    "httpStatus": 401,
+    "httpStatus": 403,
     "authentication": "rejected",
-    "policy": "disabled-team-spending-limit",
-    "notes": "Team db6f1ddf reached monthly spending limit or used all credits"
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   },
   {
+    "provider": "vercel",
+    "credentialVariable": "VERCEL_TOKEN",
+    "checkedAt": "2026-09-14T07:34:45.928793+00:00",
+    "enabled": false,
+    "generationVerified": false,
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
+  },
+  {
+    "provider": "together",
     "credentialVariable": "TOGETHER_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
+    "checkedAt": "2026-09-14T07:34:45.819500+00:00",
     "enabled": false,
     "generationVerified": false,
-    "httpStatus": 400,
-    "authentication": "rejected",
-    "policy": "disabled-error-1010",
-    "notes": "Error code 1010 - check billing dashboard or get new key"
+    "httpStatus": 200,
+    "authentication": "verified",
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   },
   {
-    "credentialVariable": "MOONSHOT_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": false,
-    "generationVerified": false,
-    "httpStatus": 401,
-    "authentication": "rejected",
-    "policy": "disabled-invalid-auth",
-    "notes": "Key nvapi-_GRw... appears invalid - need new key from moonshot.ai"
-  },
-  {
-    "credentialVariable": "FAL_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": false,
-    "generationVerified": false,
-    "httpStatus": 404,
-    "authentication": "rejected",
-    "policy": "disabled-model-not-found",
-    "notes": "Model 'flux-1-schnell' not found - may need different model ID or endpoint"
-  },
-  {
-    "credentialVariable": "THINKER_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": false,
-    "generationVerified": false,
-    "httpStatus": 0,
+    "credentialVariable": "NVIDIA_API_KEY_SECONDARY",
     "authentication": "not-tested",
-    "policy": "disabled-ssl-failure",
-    "notes": "SSL certificate mismatch on api.thinker.com - wrong domain. Need correct API domain."
+    "generationVerified": false,
+    "enabled": false,
+    "policy": "disabled-pending-free-usage-and-compatibility-verification",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers"
   },
   {
-    "credentialVariable": "NVIDIA_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
+    "provider": "huggingface",
+    "credentialVariable": "HF_TOKEN",
+    "checkedAt": "2026-09-18T00:58:49.924519+00:00",
     "enabled": false,
     "generationVerified": false,
-    "httpStatus": 0,
-    "authentication": "not-tested",
-    "policy": "disabled-missing-credential",
-    "notes": "No NVIDIA API key in credential set"
-  },
-  {
-    "provider": "ollama",
-    "credentialVariable": "OLLAMA_API_KEY",
-    "checkedAt": "2026-09-17T22:30:00.000000+00:00",
-    "enabled": false,
-    "generationVerified": false,
-    "httpStatus": 0,
-    "authentication": "not-tested",
-    "policy": "disabled-pending-local-setup",
-    "notes": "Ollama runs locally on VPS. Requires local Ollama service + configured API key."
+    "httpStatus": 200,
+    "authentication": "valid",
+    "policy": "disabled-until-zero-cost-generation-is-explicitly-verified",
+    "replacement": "Update secrets/providers.env, run scripts/check-providers.py, then apply router credentials and recreate app containers",
+    "note": "New token hf_TxIp... verified working via /api/whoami-v2."
   }
 ]
