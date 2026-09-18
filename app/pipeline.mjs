@@ -271,7 +271,7 @@ export function buildStoryboard({topic,niche,duration,sources,style='documentary
 
 async function commonsImages(query,limit=3){
   const q=new URLSearchParams({action:'query',generator:'search',gsrnamespace:'6',gsrsearch:`${query} filetype:bitmap`,gsrlimit:String(limit),prop:'imageinfo',iiprop:'url|extmetadata',iiurlwidth:'1280',format:'json',origin:'*'});
-  const data=await fetchJson(`https://commons.wikimedia.org/w/api.php?${q}`);
+  const data=await fetchJson(`https://commons.wikimedia.org/w/api.php?${q}`,20000);
   return Object.values(data.query?.pages||{}).map(p=>{
     const ii=p.imageinfo?.[0]||{}; const m=ii.extmetadata||{};
     return {title:p.title,url:ii.thumburl||ii.url,source:`https://commons.wikimedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g,'_'))}`,license:m.LicenseShortName?.value||m.License?.value||'unknown',artist:cleanText(m.Artist?.value||''),type:'image'};
@@ -488,9 +488,10 @@ async function makeScene(scene,dir,fallbackQuery,mediaPool=[],videoPool=[],share
   while(downloaded.length<2) downloaded.push(downloaded[0]);
   let motionVideo=null;
   if(scene.index%2===0 && breakerAvailable('wikimedia-video')){
-    const simple=(fallbackQuery||scene.searchQuery).split(/\s+/).slice(0,6).join(' ');
+    const queries=(scene.mediaQueries||[])[0] ? [scene.mediaQueries[0], scene.mediaQueries[1]||scene.mediaQueries[0]] : [fallbackQuery||scene.searchQuery];
+    const simple=queries[0].split(/\\s+/).slice(0,6).join(' ');
     const poolSlice=videoPool.slice(((scene.index/2)-1)%Math.max(1,videoPool.length),((scene.index/2)-1)%Math.max(1,videoPool.length)+2);
-    const vids=[...poolSlice,...await commonsVideos(simple,3).catch(()=>[])];
+    const vids=[...poolSlice,...await Promise.all(queries.map(q=>commonsVideos(q,2).catch(()=>[]))).then(arr=>arr.flat()).catch(()=>[])];
     for(const v of [...new Map(vids.filter(x=>x?.url).map(x=>[x.url,x])).values()].sort((a,b)=>relevanceScore(b,scene)-relevanceScore(a,scene))){
       try{await run('ffprobe',['-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','csv=p=0',v.url]);motionVideo={...v,local:v.url};break;}catch{}
     }
