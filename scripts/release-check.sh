@@ -59,7 +59,10 @@ for i,item in enumerate(data):
 print('provider credential references: ok')
 PY
 
-echo '[10/12] Testing production runtime preflight'\nbash scripts/production-runtime-preflight.test.sh\n\necho '[11/12] Checking whitespace'
+echo '[10/12] Testing production runtime preflight'
+bash scripts/production-runtime-preflight.test.sh
+
+echo '[11/12] Checking whitespace'
 git diff --check
 
 echo '[12/12] Validating competitive differentiators'
