@@ -30,3 +30,19 @@ test('release gate invokes production preflight and stops on its failure', async
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test('legacy VPS deployment workflow is verification-only', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/production-deploy.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /name: Release Gate \(VPS deployment retired\)/);
+  assert.match(workflow, /jobs:\s*\n\s+verify:/);
+  assert.doesNotMatch(workflow, /^\s{2}deploy:/m);
+  assert.doesNotMatch(workflow, /VPS_(HOST|USER|SSH_KEY|PASSWORD)|sshpass|85\.190\.100\.68/);
+});
+
+
+test('legacy VPS production deploy remains disabled until a supported host is configured', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/production-deploy.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /name: Production Deploy \(VPS retired; verification only\)/);
+  assert.match(workflow, /deploy:\s*\n\s*if:\s*\$\{\{\s*false\s*\}\}/);
+});

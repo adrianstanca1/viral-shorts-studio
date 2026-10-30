@@ -42,7 +42,7 @@ Each completed storyboard now produces `generation-prompts.json` plus `generativ
 ## Local AI director and styles
 - Ollama runs as an isolated CPU service with `qwen3:1.7b` for fast storyboard work and `qwen3:4b` available for stronger local tasks.
 - Text routing order is Ollama -> OpenRouter free-only -> NVIDIA only when explicitly generation-verified. Paid fallback is disabled.
-- Higgsfield is represented as a connector handoff; the VPS does not spend Higgsfield credits automatically.
+- Higgsfield is represented as a connector handoff; the runtime does not spend Higgsfield credits automatically.
 - Video styles: Documentary, Cinematic, and Whiteboard animation. Whiteboard uses the CPU-only `whiteboard-animator` engine and renders each scene with narration/captions.
 - Generative media providers remain disabled until a no-charge generation path is verified at the actual generation endpoint.
 
@@ -58,7 +58,7 @@ Verified-free external generation jobs can now be registered as pending, resolve
 
 Endpoints: `POST /api/provider-jobs`, `GET /api/provider-jobs/:id`, `POST /api/provider-jobs/:id/resolve`, and `POST /api/provider-jobs/:id/fail`.
 
-The bridge keeps provider billing outside the render worker: connector jobs are accepted only after an explicit no-charge/free grant is used, then their HTTPS result is registered to a scene. This prevents the autonomous VPS from silently spending credits while still letting AI footage compete in the normal candidate scorer.
+The bridge keeps provider billing outside the render worker: connector jobs are accepted only after an explicit no-charge/free grant is used, then their HTTPS result is registered to a scene. This prevents the autonomous worker from silently spending credits while still letting AI footage compete in the normal candidate scorer.
 
 ### Free AI scene budget manager
 The studio can rank finished scenes for cloud AI enhancement without spending blindly. `GET /api/projects/:id/ai-generation-plan` previews priorities; `POST` stores a plan and can create deduplicated pending provider jobs when `createJobs:true`. Planning favors hook/payoff and weak visual scores, skips scenes that already have AI or strong visuals, and always records `freeOnly:true` / `paidFallback:false`. Provider results are harvested later through the verified-free provider job bridge.
@@ -76,7 +76,7 @@ Provider jobs now support priority scheduling, worker leases, safe release/retry
 The Docker stack includes an isolated `provider-worker` service that claims only providers explicitly marked both enabled and verified-free. Direct Hugging Face and NVIDIA image adapters are implemented but remain disabled until zero-cost generation is explicitly verified. Generated media is stored in the shared private volume, registered as a trusted local AI candidate, scored against archive/whiteboard candidates, and can trigger scene-only re-rendering. Higgsfield remains connector-only because the VPS does not have a verified no-charge direct API path.
 
 ### Zero-cost provider verification
-The studio maintains `/app/data/provider-verification.json` as a runtime evidence ledger. Authentication checks for Hugging Face and NVIDIA run on startup and every 15 minutes, but authentication alone never enables generation. A provider is promoted only when there is explicit zero-cost evidence with remaining allowance. Higgsfield connector allowances can be recorded through the protected evidence endpoint; connector-only providers remain non-executable on the VPS. `GET /api/provider-verification` exposes the current evidence and worker eligibility without revealing credentials.
+The studio maintains `/app/data/provider-verification.json` as a runtime evidence ledger. Authentication checks for Hugging Face and NVIDIA run on startup and every 15 minutes, but authentication alone never enables generation. A provider is promoted only when there is explicit zero-cost evidence with remaining allowance. Higgsfield connector allowances can be recorded through the protected evidence endpoint; connector-only providers remain non-executable in the runtime. `GET /api/provider-verification` exposes the current evidence and worker eligibility without revealing credentials.
 
 ### Automatic verified-free routing
 
@@ -89,7 +89,26 @@ Text routing now supports both local Ollama models and Ollama Cloud through the 
 The text router is task-aware and adaptive. Fast/balanced work stays local-first on Qwen3, while strong fact-check, research, reasoning, and high-quality storyboard requests prefer only currently enabled free/included cloud routes before falling back to local Ollama. Disabled providers are skipped instead of adding latency. The manager persistently learns per-task provider and model performance from real validated requests, combining success rate and smoothed latency with the curated task-role prior; low-sample routes are deliberately confidence-limited. Learning is stored in the private runtime data volume and contains no prompts or credentials. Cloud providers use circuit breakers on authentication/quota failures; no paid fallback is allowed.
 
 ### OAuth-capable model tools
-The VPS now includes the official Gemini CLI and OpenAI Codex CLI for their supported interactive OAuth flows. Their consumer OAuth credentials are kept separate from Viral Shorts runtime inference: Google explicitly restricts third-party apps from piggybacking on Gemini CLI OAuth, and ChatGPT/Codex sign-in is not treated as free general-purpose OpenAI API capacity. OpenRouter is different: its official PKCE OAuth flow exchanges authorization for a user-controlled API key, so the studio now maintains a live zero-price OpenRouter model catalog and can use that key once OAuth is completed through an HTTPS callback.
+The optional self-hosted image can include the official Gemini CLI and OpenAI Codex CLI for their supported interactive OAuth flows. Their consumer OAuth credentials are kept separate from Viral Shorts runtime inference: Google explicitly restricts third-party apps from piggybacking on Gemini CLI OAuth, and ChatGPT/Codex sign-in is not treated as free general-purpose OpenAI API capacity. OpenRouter is different: its official PKCE OAuth flow exchanges authorization for a user-controlled API key, so the studio now maintains a live zero-price OpenRouter model catalog and can use that key once OAuth is completed through an HTTPS callback.
 
 ## Owner authentication and request hardening
 The studio now has optional single-owner session authentication for public deployment. Set `APP_AUTH_SECRET` to a random value of at least 24 characters to enable the `/login` flow; the browser receives an HttpOnly, SameSite=Strict session cookie. Before exposing the studio through a public domain or reverse proxy, set `PUBLIC_LAUNCH=true`; the server will then fail closed at startup unless a valid owner secret is present. Set `FORCE_SECURE_COOKIE=true` when the public entry point is HTTPS. `WRITE_RATE_LIMIT` controls the default mutating-request allowance per five-minute window (default 120). Health checks remain unauthenticated, while provider-worker calls can continue using the separate `PROVIDER_WORKER_TOKEN`. Security headers are emitted on all responses.
+
+
+## Deployment status
+
+The legacy SSH/VPS deployment workflow is retired. GitHub Actions now runs the release
+verification gate only; it does not connect to a VPS or deploy production services. A
+VPS-free hosting target must be selected and explicitly verified before production
+deployment is re-enabled. No paid hosting or cloud resource is activated automatically.
+
+
+## Hosting status (2026-10-30)
+
+The legacy production workflow targeted a VPS at `85.190.100.68` and the unrelated
+`cortexbuildpro.tech` hostname. That SSH deployment is retired and the deploy job is
+explicitly disabled; CI and the full release gate still run. No production deployment
+is claimed by this repository. Re-enable deployment only after a supported free host,
+correct application domain, persistent storage, secrets, and rollback path have been
+verified together. Do not restore the retired VPS credentials or run the old deploy
+script as a workaround.
