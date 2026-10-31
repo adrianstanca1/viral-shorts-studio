@@ -776,7 +776,7 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     update({status:'assembling',progress:90});
     const concat=path.join(dir,'final-list.txt');
     fs.writeFileSync(concat,scenes.map(s=>`file '${s.file}'`).join('\n')+'\n');
-    const assembled=path.join(dir,'assembled.mp4'), final=path.join(dir,'final.mp4');
+    const assembled=path.join(dir,'assembled.mp4'), final=path.join(dir,'final.mp4'), rendering=path.join(dir,'final.rendering.mp4');
     await run('ffmpeg',['-y','-f','concat','-safe','0','-i',concat,'-c','copy','-movflags','+faststart',assembled]);
     const targetDuration=Number(project.duration), assembledDuration=Number(await run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',assembled]));
     const finishing=professionalFinishingProfile({style:project.style||'documentary',duration:targetDuration,aspect:project.aspect||'9:16'});
@@ -784,16 +784,23 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     if(assembledDuration<targetDuration-.08){const pad=Math.max(.05,targetDuration-assembledDuration);videoFilters.push(`tpad=stop_mode=clone:stop_duration=${pad.toFixed(3)}`);audioFilters.push(`apad=pad_dur=${pad.toFixed(3)}`);}
     videoFilters.push(finishing.videoFilter);audioFilters.push(finishing.audioFilter);
     const profile=renderProfile();
-    await run('ffmpeg',['-y','-i',assembled,'-vf',videoFilters.join(','),'-af',audioFilters.join(','),'-t',String(targetDuration),'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-movflags','+faststart',final]);
+    // Render to a staging artifact: never let an interrupted ffmpeg process leave a
+    // partially-written final.mp4 that downstream code could mistake for a completed render.
+    fs.rmSync(rendering,{force:true});
+    await run('ffmpeg',['-y','-i',assembled,'-vf',videoFilters.join(','),'-af',audioFilters.join(','),'-t',String(targetDuration),'-c:v','libx264','-threads',String(profile.threads),'-preset',profile.scenePreset,'-crf',String(profile.sceneCrf),'-c:a','aac','-b:a',profile.audioBitrate,'-movflags','+faststart',rendering]);
     project.professionalFinishing=finishingSummary(finishing);
     try{fs.rmSync(assembled,{force:true});}catch{}
     const credits=path.join(dir,'credits.json');
     saveJson(credits,{sources,assets:scenes.flatMap(s=>s.assets)});
-    const probe=JSON.parse(await run('ffprobe',['-v','error','-show_streams','-show_format','-of','json',final]));
+    const probe=JSON.parse(await run('ffprobe',['-v','error','-show_streams','-show_format','-of','json',rendering]));
     const videoStream=(probe.streams||[]).find(x=>x.codec_type==='video'),audioStream=(probe.streams||[]).find(x=>x.codec_type==='audio');
     const actualDuration=Number(probe.format?.duration||0),durationDelta=Number((actualDuration-Number(project.duration)).toFixed(2));
     const aspectOk=!!videoStream&&aspectMatches(videoStream.width,videoStream.height,project.aspect||'9:16'),vertical=!!videoStream&&Number(videoStream.height)>Number(videoStream.width),audio=!!audioStream;
     if(!videoStream||!aspectOk||!audio||!Number.isFinite(actualDuration)||actualDuration<=0)throw new Error(`Final media QA failed: valid ${project.aspect||'9:16'} video with audio was not produced`);
+    const renderedBytes=fs.statSync(rendering).size;
+    if(!Number.isFinite(renderedBytes)||renderedBytes<=0)throw new Error('Final media QA failed: rendered artifact is empty');
+    // Publish the final filename only after ffprobe and media QA have passed.
+    fs.renameSync(rendering,final);
     const mediaQa={width:Number(videoStream.width||0),height:Number(videoStream.height||0),videoCodec:videoStream.codec_name||null,audioCodec:audioStream.codec_name||null,fileBytes:fs.statSync(final).size,bitrate:Number(probe.format?.bit_rate||0),renderProfile:renderProfile()};
     const realVideoScenes=scenes.filter(s=>s.hasRealVideo).length;
     const visualMix=scenes.reduce((m,s)=>{const k=s.visualType||'unknown';m[k]=(m[k]||0)+1;return m;},{});
@@ -819,6 +826,9 @@ export async function produceProject(project,root,onUpdate=()=>{}){
     update({status:'complete',progress:100,render:{file:final,credits,actualDuration:Number(actualDuration.toFixed(2)),targetDuration:Number(project.duration)},qa:{sceneCount:scenes.length,assetsPerScene:scenes.map(s=>s.assets.length),realVideoScenes,visualMix,candidateScenes,candidateRenders,durationDelta,vertical,aspectOk,expectedAspect:project.aspect||'9:16',audio,launchReady,media:mediaQa,retention,narrativeArc,editingRhythm,editingReady,sceneQuality,acceptedScenes,contentQualityPercent:Math.round(100*acceptedScenes/Math.max(1,scenes.length)),averageVisualScore,weakVisualScenes,visualQualityPercent,narrationScores,averageNarrationScore,weakNarrationScenes,narrationRepair:project.narrationRepair||{count:0,scenes:[]},viralityScore},publish,metrics,completedAt:new Date().toISOString()});
     return project;
   }catch(error){
+    // Best-effort cleanup of an incomplete staging output; keep previous completed
+    // final.mp4 artifacts intact so retries cannot destroy the last good render.
+    try{fs.rmSync(path.join(dir,'final.rendering.mp4'),{force:true});}catch{}
     const failedAt=new Date().toISOString(),failedStage=String(project.status||'unknown'),message=String(error.message||error).slice(0,1200);
     const failureHistory=[...(project.failureHistory||[]),{at:failedAt,stage:failedStage,error:message}].slice(-5);
     update({status:'failed',error:message,failedStage,failedAt,failureHistory});
